@@ -16,6 +16,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 -
 
+## [3.6.0] - 2025-06-20
+
+### Added
+- **TXT Backup System:** Implemented comprehensive backup functionality that creates TXT files with identical formatting to CSV exports:
+  - Auto-creates `backup/` subfolder in `metadata_csv/` directory
+  - Generates platform-specific backup files: `adobe_stock_backup.txt`, `shutterstock_backup.txt`, `123rf_backup.txt`, `vecteezy_backup.txt`, `depositphotos_backup.txt`
+  - Cumulative backup system that appends new data while preserving historical entries
+  - Perfect format matching with corresponding CSV files for seamless data recovery
+- **Smart Description Truncation:** Added intelligent text truncation system to prevent upload failures:
+  - `smart_truncate_description()`: Handles descriptions >200 characters by cutting at last period within limit, or hard-cutting to 199 chars + period
+  - `smart_truncate_title()`: Similar logic for titles with smart period handling
+  - Integrated into all platform sanitization functions to ensure compliance with character limits
+- **Enhanced Error Handling & Validation:** Implemented comprehensive metadata validation and fallback system:
+  - `validate_metadata_completeness()`: Auto-detects and fixes incomplete metadata (empty titles, descriptions, keywords)
+  - Intelligent fallbacks: filename→title, title→description, auto-generated keywords from title
+  - `write_to_platform_csvs_safe()`: Per-platform error handling with success threshold (minimum 3/5 platforms must succeed)
+  - Graceful degradation that prevents total failure from individual platform issues
+
+### Changed
+- **Improved system reliability & backup system:**
+  - Enhance and fix prompt to better suit priorities
+  - Better API response validation before CSV writing
+  - Removal of race conditions in multi-threaded processing
+  - Individual platform error isolation
+  - Self-healing metadata system with automatic fallbacks
+- **Platform-Specific CSV Writing:** Refined CSV export logic with better error handling:
+  - Individual try/catch blocks for each platform to prevent cascade failures
+  - Detailed logging for troubleshooting platform-specific issues
+  - Success/failure tracking with comprehensive reporting
+
+### Fixed
+- **Quote Escaping Issues:** Resolved double-escaping problems in TXT backup files for 123RF and Vecteezy platforms:
+  - Fixed over-escaping that caused `"""description"""` instead of `"description"`
+  - Implemented platform-specific formatting logic for proper CSV compliance
+  - Raw data approach prevents multiple escaping passes
+- **Missing Row Data:** Fixed incomplete CSV exports caused by:
+  - Weak API response validation allowing partial metadata through
+  - Race conditions in concurrent CSV writing operations
+  - Process interruptions during stop/resume operations
+  - Silent failures in metadata processing pipeline
+- **Data Integrity:** Enhanced backup system validation to filter corrupted or malformed data entries
+
+### Technical Details
+- **Backup Architecture:** TXT backup system runs independently of CSV success/failure, ensuring data preservation even during partial failures
+- **Smart Formatting:** Platform-specific quote handling (123RF requires quoted fields, Vecteezy conditionally quotes based on content)
+- **Validation Pipeline:** Multi-stage validation ensures data completeness before writing to any output format
+- **Fallback Hierarchy:** Structured fallback system with ultimate safety net of generic keywords ["image", "stock", "photo"]
+---
 ## [3.5.1] - 2025-06-18
 
 ### Fixed

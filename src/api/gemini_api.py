@@ -187,7 +187,7 @@ def _attempt_gemini_request(
     # Check for converted files in the filename if not explicitly marked as vector conversion
     final_is_vector_conversion = is_vector_conversion or "converted" in image_basename.lower()
     is_video_processing = isinstance(image_paths, list) and len(image_paths) > 1
-    
+
     selected_prompt_text = PROMPT_TEXT
     if priority == "Cepat":
         if use_video_prompt: selected_prompt_text = PROMPT_TEXT_VIDEO_FAST
