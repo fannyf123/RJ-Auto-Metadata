@@ -8,7 +8,7 @@ def check_api_keys_status(api_keys, model=None):
     headers = {"Content-Type": "application/json", "User-Agent": "GeminiKeyChecker/1.0"}
     payload = {
         "contents": [
-            {"parts": [
+            {"role": "user", "parts": [
                 {"text": "Test API key status only. Ignore this request."}
             ]}
         ],

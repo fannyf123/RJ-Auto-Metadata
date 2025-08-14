@@ -42,22 +42,16 @@ def process_jpg_jpeg(input_path, output_dir, selected_api_key: str, stop_event, 
         return "failed_unknown", None, None
     
     try:
-        file_size_mb = os.path.getsize(input_path) / (1024 * 1024)
-        if file_size_mb > 2:
-            log_message(f"File {filename} ({file_size_mb:.2f}MB) needs compression.")
-            compressed_path, is_compressed = compress_image(
-                input_path, chosen_temp_folder, stop_event=stop_event
-            )
-            
-            if is_compressed and compressed_path and os.path.exists(compressed_path):
-                log_message(f"Compression successful: {os.path.basename(compressed_path)}")
-                path_for_api = compressed_path
-                temp_files_created.append(compressed_path)
-            else:
-                log_message(f"Compression failed. Using original file: {filename}")
-                path_for_api = input_path
+        # Always attempt compression to enforce dimension cap even if file size is small
+        compressed_path, is_compressed = compress_image(
+            input_path, chosen_temp_folder, stop_event=stop_event
+        )
+        if is_compressed and compressed_path and os.path.exists(compressed_path):
+            log_message(f"Compression/dimension cap applied: {os.path.basename(compressed_path)}")
+            path_for_api = compressed_path
+            temp_files_created.append(compressed_path)
         else:
-            log_message(f"File {filename} ({file_size_mb:.2f}MB) does not need compression.")
+            log_message(f"No compression needed for {filename}; using original")
             path_for_api = input_path
     except Exception as e:
         log_message(f"Error checking file size/compression: {e}")

@@ -25,7 +25,7 @@ from src.api.gemini_api import check_stop_event, is_stop_requested
 TEMP_COMPRESSION_FOLDER_NAME = "temp_compressed"
 MAX_IMAGE_SIZE_MB = 2
 COMPRESSION_QUALITY = 20 
-MAX_IMAGE_DIMENSION = 3000 
+MAX_IMAGE_DIMENSION = 300
 
 def get_temp_compression_folder(base_dir=None, output_dir=None):
     if output_dir and os.path.exists(output_dir) and os.path.isdir(output_dir):
@@ -63,81 +63,73 @@ def compress_image(input_path, temp_folder=None, max_size_mb=MAX_IMAGE_SIZE_MB, 
         if stop_event and stop_event.is_set() or is_stop_requested():
             log_message("Compression cancelled due to stop request.")
             return input_path, False
-        
-        file_size_mb = os.path.getsize(input_path) / (1024 * 1024)
+
         filename = os.path.basename(input_path)
-        
-        if file_size_mb <= max_size_mb:
-            log_message(f"File size {file_size_mb:.2f}MB does not need compression: {filename}")
-            return input_path, False
-        
+        file_size_mb = os.path.getsize(input_path) / (1024 * 1024)
+        base, ext = os.path.splitext(filename)
+        ext_lower = ext.lower()
+
         if temp_folder is None:
             parent_dir = os.path.dirname(input_path)
             temp_folder = os.path.join(parent_dir, TEMP_COMPRESSION_FOLDER_NAME)
-        
+
         if not os.path.exists(temp_folder):
             os.makedirs(temp_folder, exist_ok=True)
             log_message(f"Compression folder created: {temp_folder}")
-        
+
         if stop_event and stop_event.is_set() or is_stop_requested():
             log_message("Compression cancelled due to stop request.")
             return input_path, False
-        
-        base, ext = os.path.splitext(filename)
-        ext_lower = ext.lower()
-        
+
         try:
             with Image.open(input_path) as img:
                 original_width, original_height = img.size
                 original_mode = img.mode
                 has_transparency = original_mode == 'RGBA' or original_mode == 'LA' or 'transparency' in img.info
-                
+
+                # Determine if we need to process by size or dimension
+                needs_resize = original_width > max_dimension or original_height > max_dimension
+                needs_compress = file_size_mb > max_size_mb
+                if not needs_resize and not needs_compress:
+                    log_message(f"No compression needed (size {file_size_mb:.2f}MB, {original_width}x{original_height}): {filename}")
+                    return input_path, False
+
                 if stop_event and stop_event.is_set() or is_stop_requested():
                     log_message("Compression cancelled due to stop request (after load image).")
                     return input_path, False
-                
-                scale_factor = 1.0
-                if original_width > max_dimension or original_height > max_dimension:
+
+                # Resize by dimension cap if needed
+                if needs_resize:
                     scale_factor = min(max_dimension / original_width, max_dimension / original_height)
-                    new_width = int(original_width * scale_factor)
-                    new_height = int(original_height * scale_factor)
-                    img = img.resize((new_width, new_height), Image.LANCZOS)
-                    log_message(f"Resize {filename}: {original_width}x{original_height} → {new_width}x{new_height}")
-                
+                    new_width = max(1, int(original_width * scale_factor))
+                    new_height = max(1, int(original_height * scale_factor))
+                    if new_width != original_width or new_height != original_height:
+                        img = img.resize((new_width, new_height), Image.LANCZOS)
+                        log_message(f"Resize {filename}: {original_width}x{original_height} → {new_width}x{new_height}")
+
                 if stop_event and stop_event.is_set() or is_stop_requested():
                     log_message("Compression cancelled due to stop request (after resize).")
                     return input_path, False
-                
+
                 adaptive_quality = max(10, quality - int(min(file_size_mb, 50) / 10))
-                
+
                 if ext_lower == '.png':
                     jpg_path = os.path.join(temp_folder, f"{base}_compressed.jpg")
-                    png_path = os.path.join(temp_folder, f"{base}_compressed.png")
-                    
+
                     if stop_event and stop_event.is_set() or is_stop_requested():
                         log_message("Compression cancelled due to stop request (before conversion to JPG).")
                         return input_path, False
-                    
-                    log_message(f"File PNG needs compression. Trying conversion to JPG.")
+
+                    log_message("Converting PNG to JPG for API efficiency")
                     try:
                         if original_mode in ['RGBA', 'LA']:
-                            log_message(f"Conversion PNG (originally transparent) to JPG with white background")
                             background = Image.new('RGB', img.size, (255, 255, 255))
                             alpha_channel = img.split()[-1]
                             background.paste(img, mask=alpha_channel)
-                            
-                            if stop_event and stop_event.is_set() or is_stop_requested():
-                                log_message("Compression cancelled due to stop request (after prepare background).")
-                                return input_path, False
-                            
                             background.save(jpg_path, 'JPEG', quality=adaptive_quality, optimize=True)
                         else:
-                            if stop_event and stop_event.is_set() or is_stop_requested():
-                                log_message("Compression cancelled due to stop request (before direct conversion to JPG).")
-                                return input_path, False
-                            
                             img.convert('RGB').save(jpg_path, 'JPEG', quality=adaptive_quality, optimize=True)
-                        
+
                         if os.path.exists(jpg_path):
                             if stop_event and stop_event.is_set() or is_stop_requested():
                                 try:
@@ -147,50 +139,38 @@ def compress_image(input_path, temp_folder=None, max_size_mb=MAX_IMAGE_SIZE_MB, 
                                     pass
                                 log_message("Compression cancelled due to stop request (after conversion to JPG).")
                                 return input_path, False
-                            
+
                             jpg_size_mb = os.path.getsize(jpg_path) / (1024 * 1024)
-                            compression_ratio = (1 - (jpg_size_mb / file_size_mb)) * 100
-                            
+                            compression_ratio = (1 - (jpg_size_mb / max(file_size_mb, 0.0001))) * 100
+
                             if jpg_size_mb > max_size_mb and adaptive_quality > 15:
-                                if stop_event and stop_event.is_set() or is_stop_requested():
-                                    try:
-                                        if os.path.exists(jpg_path):
-                                            os.remove(jpg_path)
-                                    except Exception:
-                                        pass
-                                    log_message("Compression cancelled due to stop request (before aggressive compression).")
-                                    return input_path, False
-                                
-                                log_message(f"JPG size still too large, compress more aggressively")
+                                log_message("JPG still large, applying stronger compression")
                                 try:
-                                    if original_mode in ['RGBA', 'LA']:
-                                         background.save(jpg_path, 'JPEG', quality=max(10, adaptive_quality - 10), optimize=True)
-                                    else:
-                                         img.convert('RGB').save(jpg_path, 'JPEG', quality=max(10, adaptive_quality - 10), optimize=True)
+                                    Image.open(jpg_path).save(jpg_path, 'JPEG', quality=max(10, adaptive_quality - 10), optimize=True)
                                     jpg_size_mb = os.path.getsize(jpg_path) / (1024 * 1024)
-                                    compression_ratio = (1 - (jpg_size_mb / file_size_mb)) * 100
+                                    compression_ratio = (1 - (jpg_size_mb / max(file_size_mb, 0.0001))) * 100
                                 except Exception as e:
                                     log_message(f"Error aggressive JPG compression: {e}")
-                            
-                            log_message(f"Conversion PNG→JPG: {file_size_mb:.2f}MB → {jpg_size_mb:.2f}MB ({compression_ratio:.1f}% reduction)")
+
+                            log_message(f"PNG→JPG: {file_size_mb:.2f}MB → {jpg_size_mb:.2f}MB ({compression_ratio:.1f}% reduction)")
                             return jpg_path, True
                         else:
-                            log_message(f"Error: File JPG conversion result not found.")
+                            log_message("Error: JPG conversion result not found")
                             return input_path, False
                     except Exception as e:
-                        log_message(f"Error when trying to convert PNG to JPG: {e}")
+                        log_message(f"Error converting PNG to JPG: {e}")
                         return input_path, False
-                
+
                 elif ext_lower in ['.jpg', '.jpeg']:
                     compressed_path = os.path.join(temp_folder, f"{base}_compressed{ext}")
-                    
+
                     if stop_event and stop_event.is_set() or is_stop_requested():
                         log_message("Compression cancelled due to stop request (before JPG compression).")
                         return input_path, False
-                    
+
                     try:
                         img.save(compressed_path, 'JPEG', quality=adaptive_quality, optimize=True)
-                        
+
                         if stop_event and stop_event.is_set() or is_stop_requested():
                             try:
                                 if os.path.exists(compressed_path):
@@ -199,45 +179,26 @@ def compress_image(input_path, temp_folder=None, max_size_mb=MAX_IMAGE_SIZE_MB, 
                                 pass
                             log_message("Compression cancelled due to stop request (after JPG compression).")
                             return input_path, False
-                        
+
                         if os.path.exists(compressed_path):
                             compressed_size_mb = os.path.getsize(compressed_path) / (1024 * 1024)
-                            compression_ratio = (1 - (compressed_size_mb / file_size_mb)) * 100
-                            
+                            compression_ratio = (1 - (compressed_size_mb / max(file_size_mb, 0.0001))) * 100
+
                             if compressed_size_mb > max_size_mb and adaptive_quality > 15:
-                                if stop_event and stop_event.is_set() or is_stop_requested():
-                                    try:
-                                        if os.path.exists(compressed_path):
-                                            os.remove(compressed_path)
-                                    except Exception:
-                                        pass
-                                    log_message("Compression cancelled due to stop request (before aggressive JPG compression).")
-                                    return input_path, False
-                                
-                                log_message(f"JPG size still too large, compress more aggressively")
+                                log_message("JPG still large, applying stronger compression")
                                 try:
-                                    img.save(compressed_path, 'JPEG', quality=max(10, adaptive_quality - 10), optimize=True)
-                                    
-                                    if stop_event and stop_event.is_set() or is_stop_requested():
-                                        try:
-                                            if os.path.exists(compressed_path):
-                                                os.remove(compressed_path)
-                                        except Exception:
-                                            pass
-                                        log_message("Compression cancelled due to stop request (after aggressive JPG compression).")
-                                        return input_path, False
-                                    
+                                    Image.open(compressed_path).save(compressed_path, 'JPEG', quality=max(10, adaptive_quality - 10), optimize=True)
                                     compressed_size_mb = os.path.getsize(compressed_path) / (1024 * 1024)
-                                    compression_ratio = (1 - (compressed_size_mb / file_size_mb)) * 100
+                                    compression_ratio = (1 - (compressed_size_mb / max(file_size_mb, 0.0001))) * 100
                                 except Exception as e:
                                     log_message(f"Error aggressive JPG compression: {e}")
-                            
-                            log_message(f"JPG compression: {file_size_mb:.2f}MB → {compressed_size_mb:.2f}MB ({compression_ratio:.1f}% reduction)")
+
+                            log_message(f"JPG: {file_size_mb:.2f}MB → {compressed_size_mb:.2f}MB ({compression_ratio:.1f}% reduction)")
                             return compressed_path, True
                     except Exception as e:
                         log_message(f"Error JPG compression: {e}")
                         return input_path, False
-                
+
                 else:
                     jpg_path = os.path.join(temp_folder, f"{base}_compressed.jpg")
                     try:
@@ -250,23 +211,23 @@ def compress_image(input_path, temp_folder=None, max_size_mb=MAX_IMAGE_SIZE_MB, 
                             background.save(jpg_path, 'JPEG', quality=adaptive_quality, optimize=True)
                         else:
                             img.convert('RGB').save(jpg_path, 'JPEG', quality=adaptive_quality, optimize=True)
-                        
+
                         if os.path.exists(jpg_path):
                             jpg_size_mb = os.path.getsize(jpg_path) / (1024 * 1024)
-                            compression_ratio = (1 - (jpg_size_mb / file_size_mb)) * 100
-                            log_message(f"Conversion {ext_lower}→JPG: {file_size_mb:.2f}MB → {jpg_size_mb:.2f}MB ({compression_ratio:.1f}% reduction)")
+                            compression_ratio = (1 - (jpg_size_mb / max(file_size_mb, 0.0001))) * 100
+                            log_message(f"{ext_lower}→JPG: {file_size_mb:.2f}MB → {jpg_size_mb:.2f}MB ({compression_ratio:.1f}% reduction)")
                             return jpg_path, True
                     except Exception as e:
-                        log_message(f"Error converting other formats to JPG: {e}")
+                        log_message(f"Error converting to JPG: {e}")
                         return input_path, False
-        
+
         except (IOError, OSError) as e:
             log_message(f"Error I/O during compression {filename}: {e}")
             return input_path, False
         except Exception as e:
             log_message(f"Error compression {filename}: {e}")
             return input_path, False
-        
+
         return input_path, False
     except Exception as e:
         log_message(f"Error compression {os.path.basename(input_path)}: {e}")

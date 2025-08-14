@@ -17,10 +17,21 @@
 # src/metadata/csv_exporter.py
 import os
 import re
+import threading
+import time
 from src.utils.logging import log_message
-from src.utils.file_utils import sanitize_csv_field, write_to_csv
+from src.utils.file_utils import sanitize_csv_field, write_to_csv_thread_safe
 from src.metadata.categories.for_adobestock import map_to_adobe_stock_category
 from src.metadata.categories.for_shutterstock import map_to_shutterstock_category, map_to_shutterstock_category_video
+_csv_locks = {
+    'adobe_stock': threading.Lock(),
+    'shutterstock': threading.Lock(),
+    '123rf': threading.Lock(),
+    'vecteezy': threading.Lock(),
+    'depositphotos': threading.Lock(),
+    'miri_canvas': threading.Lock(),
+    'txt_backup': threading.Lock()
+}
 
 def smart_truncate_description(description, max_length=200):
     if not description:
@@ -137,7 +148,8 @@ def sanitize_vecteezy_keywords(keywords):
         clean_kw = re.sub(r'\s+', ' ', clean_kw).strip()
         return clean_kw
 
-def write_123rf_csv(csv_path, filename, description, keywords):
+def write_123rf_csv_safe(csv_path, filename, description, keywords):
+    """Thread-safe 123RF CSV writing dengan file locking"""
     csv_dir = os.path.dirname(csv_path)
     if not os.path.exists(csv_dir):
         try:
@@ -145,23 +157,29 @@ def write_123rf_csv(csv_path, filename, description, keywords):
         except Exception as e:
             log_message(f"Error: Failed to create CSV directory for 123RF: {e}")
             return False
-    
-    file_exists = os.path.isfile(csv_path)
-    try:
-        with open(csv_path, 'a', newline='', encoding='utf-8') as csvfile:
-            if not file_exists or os.path.getsize(csv_path) == 0:
-                csvfile.write('oldfilename,"123rf_filename","description","keywords","country"\n')
-            truncated_description = smart_truncate_description(description, max_length=200)
-            safe_filename = filename.replace('"', '""')
-            safe_description = truncated_description.replace('"', '""')
-            safe_keywords = keywords.replace('"', '""')
-            csvfile.write(f'{safe_filename},"","{safe_description}","{safe_keywords}","ID"\n')
-        return True
-    except Exception as e:
-        log_message(f"Error writing to CSV 123RF: {e}")
-        return False
+    with _csv_locks['123rf']:
+        try:
+            file_exists = os.path.isfile(csv_path)
+            
+            with open(csv_path, 'a', newline='', encoding='utf-8') as csvfile:
+                if not file_exists or os.path.getsize(csv_path) == 0:
+                    csvfile.write('oldfilename,"123rf_filename","description","keywords","country"\n')
+                    csvfile.flush() 
+                truncated_description = smart_truncate_description(description, max_length=200)
+                safe_filename = filename.replace('"', '""')
+                safe_description = truncated_description.replace('"', '""')
+                safe_keywords = keywords.replace('"', '""')
+                
+                csvfile.write(f'{safe_filename},"","{safe_description}","{safe_keywords}","ID"\n')
+                csvfile.flush()  
+                
+            return True
+            
+        except Exception as e:
+            log_message(f"Error writing to CSV 123RF: {e}")
+            return False
 
-def write_vecteezy_csv(csv_path, filename, title, description, keywords):
+def write_vecteezy_csv_safe(csv_path, filename, title, description, keywords):
     csv_dir = os.path.dirname(csv_path)
     if not os.path.exists(csv_dir):
         try:
@@ -169,28 +187,31 @@ def write_vecteezy_csv(csv_path, filename, title, description, keywords):
         except Exception as e:
             log_message(f"Error: Failed to create CSV directory for Vecteezy: {e}")
             return False
-    
-    file_exists = os.path.isfile(csv_path)
-    try:
-        with open(csv_path, 'a', newline='', encoding='utf-8') as csvfile:
-            if not file_exists or os.path.getsize(csv_path) == 0:
-                csvfile.write('Filename,Title,Description,Keywords,License,Id\n')
+    with _csv_locks['vecteezy']:
+        try:
+            file_exists = os.path.isfile(csv_path)
             
-            truncated_title = smart_truncate_title(title, max_length=200)
-            truncated_description = smart_truncate_description(description, max_length=200)
+            with open(csv_path, 'a', newline='', encoding='utf-8') as csvfile:
+                if not file_exists or os.path.getsize(csv_path) == 0:
+                    csvfile.write('Filename,Title,Description,Keywords,License,Id\n')
+                    csvfile.flush() 
+                truncated_title = smart_truncate_title(title, max_length=200)
+                truncated_description = smart_truncate_description(description, max_length=200)
+                
+                safe_filename = filename.replace('"', '""')
+                safe_title = truncated_title.replace('"', '""')
+                safe_description = truncated_description.replace('"', '""')
+                safe_keywords = keywords.replace('"', '""')
+                
+                csvfile.write(f'{safe_filename},"{safe_title}","{safe_description}","{safe_keywords}",pro,\n')
+                csvfile.flush()  
+            return True
             
-            safe_filename = filename.replace('"', '""')
-            safe_title = truncated_title.replace('"', '""')
-            safe_description = truncated_description.replace('"', '""')
-            safe_keywords = keywords.replace('"', '""')
-            
-            csvfile.write(f'{safe_filename},{safe_title},"{safe_description}","{safe_keywords}",pro,\n')
-        return True
-    except Exception as e:
-        log_message(f"Error writing to CSV Vecteezy: {e}")
-        return False
+        except Exception as e:
+            log_message(f"Error writing to CSV Vecteezy: {e}")
+            return False
 
-def write_miri_canvas_csv(csv_path, filename, title, keywords):
+def write_miri_canvas_csv_safe(csv_path, filename, title, keywords):
     import re
     csv_dir = os.path.dirname(csv_path)
     if not os.path.exists(csv_dir):
@@ -199,29 +220,34 @@ def write_miri_canvas_csv(csv_path, filename, title, keywords):
         except Exception as e:
             log_message(f"Error: Failed to create CSV directory for Miri Canvas: {e}")
             return False
-
-    file_exists = os.path.isfile(csv_path)
-    try:
-        with open(csv_path, 'a', newline='', encoding='utf-8') as csvfile:
-            if not file_exists or os.path.getsize(csv_path) == 0:
-                csvfile.write('fileName,"uniqueId","elementName","keywords","tier","contentType"\n')
-
-            base_filename = os.path.splitext(filename)[0]
-            from src.metadata.csv_exporter import smart_truncate_title
-            safe_title = smart_truncate_title(str(title), max_length=100)
-            safe_title = re.sub(r'[^\w\s-]', '', safe_title)
-            if isinstance(keywords, list):
-                safe_keywords = ','.join(keywords[:25])
-            else:
-                safe_keywords = ','.join(str(keywords).split(',')[:25])
-            tier = 'Premium'
-            content_type = ''
-            unique_id = ''
-            csvfile.write(f'{base_filename},"{unique_id}","{safe_title}","{safe_keywords}","{tier}","{content_type}"\n')
-        return True
-    except Exception as e:
-        log_message(f"Error writing to CSV Miri Canvas: {e}")
-        return False
+    with _csv_locks['miri_canvas']:
+        try:
+            file_exists = os.path.isfile(csv_path)
+            
+            with open(csv_path, 'a', newline='', encoding='utf-8') as csvfile:
+                if not file_exists or os.path.getsize(csv_path) == 0:
+                    csvfile.write('fileName,"uniqueId","elementName","keywords","tier","contentType"\n')
+                    csvfile.flush() 
+                base_filename = os.path.splitext(filename)[0]
+                safe_title = smart_truncate_title(str(title), max_length=100)
+                safe_title = re.sub(r'[^\w\s-]', '', safe_title)
+                
+                if isinstance(keywords, list):
+                    safe_keywords = ','.join(keywords[:25])
+                else:
+                    safe_keywords = ','.join(str(keywords).split(',')[:25])
+                    
+                tier = 'Premium'
+                content_type = ''
+                unique_id = ''
+                
+                csvfile.write(f'{base_filename},"{unique_id}","{safe_title}","{safe_keywords}","{tier}","{content_type}"\n')
+                csvfile.flush()  
+            return True
+            
+        except Exception as e:
+            log_message(f"Error writing to CSV Miri Canvas: {e}")
+            return False
 
 def validate_metadata_completeness(metadata, filename="unknown"):
 
@@ -361,7 +387,6 @@ def write_to_platform_csvs_safe(csv_dir, filename, title, description, keywords,
         success_count = 0
         failed_platforms = []
         
-        # Adobe Stock
         try:
             as_csv_path = os.path.join(csv_dir, "adobe_stock_export.csv")
             as_header = ["Filename", "Title", "Keywords", "Category", "Releases"]
@@ -369,7 +394,7 @@ def write_to_platform_csvs_safe(csv_dir, filename, title, description, keywords,
             as_keywords_clean = sanitize_adobe_stock_keywords(keywords if isinstance(keywords, list) else as_keywords)
             as_data_row = [safe_filename, as_title_clean, as_keywords_clean, as_category, ""]
             
-            if write_to_csv(as_csv_path, as_header, as_data_row):
+            if write_to_csv_thread_safe(as_csv_path, as_header, as_data_row):
                 success_count += 1
             else:
                 failed_platforms.append("Adobe Stock")
@@ -377,14 +402,13 @@ def write_to_platform_csvs_safe(csv_dir, filename, title, description, keywords,
             log_message(f"ERROR CSV Adobe Stock: {e}", "error")
             failed_platforms.append("Adobe Stock")
         
-        # ShutterStock  
         try:
             ss_csv_path = os.path.join(csv_dir, "shutterstock_export.csv")
             ss_header = ["Filename", "Description", "Keywords", "Categories", "Editorial", "Mature content", "illustration"]
             illustration_value = "yes" if is_vector else ""
             ss_data_row = [safe_filename, safe_description, ss_keywords, ss_category, "no", "", illustration_value]
             
-            if write_to_csv(ss_csv_path, ss_header, ss_data_row):
+            if write_to_csv_thread_safe(ss_csv_path, ss_header, ss_data_row):
                 success_count += 1
             else:
                 failed_platforms.append("Shutterstock")
@@ -392,10 +416,9 @@ def write_to_platform_csvs_safe(csv_dir, filename, title, description, keywords,
             log_message(f"ERROR CSV Shutterstock: {e}", "error")
             failed_platforms.append("Shutterstock")
         
-        # 123RF
         try:
             rf_csv_path = os.path.join(csv_dir, "123rf_export.csv")
-            if write_123rf_csv(rf_csv_path, safe_filename, safe_description, as_keywords):
+            if write_123rf_csv_safe(rf_csv_path, safe_filename, safe_description, as_keywords):
                 success_count += 1
             else:
                 failed_platforms.append("123RF")
@@ -403,12 +426,11 @@ def write_to_platform_csvs_safe(csv_dir, filename, title, description, keywords,
             log_message(f"ERROR CSV 123RF: {e}", "error")
             failed_platforms.append("123RF")
         
-        # Vecteezy
         try:
             vz_csv_path = os.path.join(csv_dir, "vecteezy_export.csv")
             vz_title_clean = sanitize_vecteezy_title(safe_title)
             vz_keywords_clean = sanitize_vecteezy_keywords(keywords if isinstance(keywords, list) else as_keywords)
-            if write_vecteezy_csv(vz_csv_path, safe_filename, vz_title_clean, safe_description, vz_keywords_clean):
+            if write_vecteezy_csv_safe(vz_csv_path, safe_filename, vz_title_clean, safe_description, vz_keywords_clean):
                 success_count += 1
             else:
                 failed_platforms.append("Vecteezy")
@@ -416,13 +438,12 @@ def write_to_platform_csvs_safe(csv_dir, filename, title, description, keywords,
             log_message(f"ERROR CSV Vecteezy: {e}", "error")
             failed_platforms.append("Vecteezy")
         
-        # Depositphotos
         try:
             dp_csv_path = os.path.join(csv_dir, "depositphotos_export.csv")
             dp_header = ["Filename", "description", "Keywords", "Nudity", "Editorial"]
             dp_data_row = [safe_filename, safe_description, as_keywords, "no", "no"]
             
-            if write_to_csv(dp_csv_path, dp_header, dp_data_row):
+            if write_to_csv_thread_safe(dp_csv_path, dp_header, dp_data_row):
                 success_count += 1
             else:
                 failed_platforms.append("Depositphotos")
@@ -430,12 +451,11 @@ def write_to_platform_csvs_safe(csv_dir, filename, title, description, keywords,
             log_message(f"ERROR CSV Depositphotos: {e}", "error")
             failed_platforms.append("Depositphotos")
         
-        # Miri Canvas
         try:
             mc_csv_path = os.path.join(csv_dir, "miri_canvas_export.csv")
-            mc_title_clean = sanitize_vecteezy_title(safe_title) # Use vecteezy sanitizer for Miri Canvas title
-            mc_keywords_clean = sanitize_vecteezy_keywords(keywords if isinstance(keywords, list) else as_keywords) # Use vecteezy sanitizer for Miri Canvas keywords
-            if write_miri_canvas_csv(mc_csv_path, safe_filename, mc_title_clean, mc_keywords_clean):
+            mc_title_clean = sanitize_vecteezy_title(safe_title) 
+            mc_keywords_clean = sanitize_vecteezy_keywords(keywords if isinstance(keywords, list) else as_keywords) 
+            if write_miri_canvas_csv_safe(mc_csv_path, safe_filename, mc_title_clean, mc_keywords_clean):
                 success_count += 1
             else:
                 failed_platforms.append("Miri Canvas")
@@ -445,7 +465,7 @@ def write_to_platform_csvs_safe(csv_dir, filename, title, description, keywords,
         
         backup_dir = os.path.join(csv_dir, "backup")
         try:
-            backup_success_count, backup_failed = write_platform_specific_txt_backups(
+            backup_success_count, backup_failed = write_platform_specific_txt_backups_safe(
                 backup_dir, safe_filename, safe_title, safe_description, keywords, 
                 as_keywords, ss_keywords, as_category, ss_category, is_vector
             )
@@ -530,7 +550,7 @@ def write_txt_backup(backup_dir, platform_name, header, data_rows):
         log_message(f"Error writing TXT backup {platform_name}: {e}", "error")
         return False
 
-def write_platform_specific_txt_backups(backup_dir, filename, safe_title, safe_description, keywords, as_keywords, ss_keywords, as_category, ss_category, is_vector=False):
+def write_platform_specific_txt_backups_safe(backup_dir, filename, safe_title, safe_description, keywords, as_keywords, ss_keywords, as_category, ss_category, is_vector=False):
     success_count = 0
     failed_platforms = []
     
@@ -545,11 +565,11 @@ def write_platform_specific_txt_backups(backup_dir, filename, safe_title, safe_d
         },
         '123rf': {
             'header': ['oldfilename', '"123rf_filename"', '"description"', '"keywords"', '"country"'],
-            'data': [filename, "", safe_description, as_keywords, "ID"]  # RAW data, quotes will be handled by formatting
+            'data': [filename, "", safe_description, as_keywords, "ID"]  
         },
         'vecteezy': {
             'header': ["Filename", "Title", "Description", "Keywords", "License", "Id"],
-            'data': [filename, sanitize_vecteezy_title(safe_title), safe_description, sanitize_vecteezy_keywords(keywords if isinstance(keywords, list) else as_keywords), "pro", ""]  # RAW data
+            'data': [filename, sanitize_vecteezy_title(safe_title), safe_description, sanitize_vecteezy_keywords(keywords if isinstance(keywords, list) else as_keywords), "pro", ""]  
         },
         'depositphotos': {
             'header': ["Filename", "description", "Keywords", "Nudity", "Editorial"],
@@ -563,106 +583,116 @@ def write_platform_specific_txt_backups(backup_dir, filename, safe_title, safe_d
     
     if not os.path.exists(backup_dir):
         os.makedirs(backup_dir, exist_ok=True)
-    
-    existing_data = {}
-    for platform_name in platform_data.keys():
-        backup_file = os.path.join(backup_dir, f"{platform_name}_backup.txt")
-        if os.path.exists(backup_file):
-            try:
-                with open(backup_file, 'r', encoding='utf-8') as f:
-                    lines = f.readlines()
-                    if len(lines) > 1:
-                        existing_data[platform_name] = [line.strip() for line in lines[1:]]
-                    else:
-                        existing_data[platform_name] = []
-            except Exception as e:
-                log_message(f"Warning: Failed to read existing backup {platform_name}: {e}", "warning")
-                existing_data[platform_name] = []
-        else:
-            existing_data[platform_name] = []
-    
-    for platform_name, data in platform_data.items():
-        try:
-            new_row = data['data']
-            formatted_new_row = []
-            
-            for i, field in enumerate(new_row):
-                field_str = str(field) if field is not None else ""
-                
-                if platform_name == '123rf':
-                    if i == 1:
-                        formatted_new_row.append('""')
-                    elif i in [2, 3, 4]:
-                        escaped_field = field_str.replace('"', '""')
-                        formatted_new_row.append(f'"{escaped_field}"')
-                    else:
-                        formatted_new_row.append(field_str)
-                
-                elif platform_name == 'miri_canvas':
-                    if i == 1:
-                        formatted_new_row.append('""')
-                    elif i in [2, 3, 4, 6]:
-                        escaped_field = field_str.replace('"', '""')
-                        formatted_new_row.append(f'"{escaped_field}"')
-                    else:
-                        formatted_new_row.append(field_str)
-                        
-                elif platform_name == 'vecteezy':
-                    if i in [2, 3]:
-                        escaped_field = field_str.replace('"', '""')
-                        if ',' in field_str or '"' in field_str or '\n' in field_str:
-                            formatted_new_row.append(f'"{escaped_field}"')
+    with _csv_locks['txt_backup']:
+        existing_data = {}
+        for platform_name in platform_data.keys():
+            backup_file = os.path.join(backup_dir, f"{platform_name}_backup.txt")
+            if os.path.exists(backup_file):
+                try:
+                    with open(backup_file, 'r', encoding='utf-8') as f:
+                        lines = f.readlines()
+                        if len(lines) > 1:
+                            existing_data[platform_name] = [line.strip() for line in lines[1:]]
                         else:
-                            formatted_new_row.append(escaped_field)
-                    else:
-                        if ',' in field_str or '"' in field_str or '\n' in field_str:
+                            existing_data[platform_name] = []
+                except Exception as e:
+                    log_message(f"Warning: Failed to read existing backup {platform_name}: {e}", "warning")
+                    existing_data[platform_name] = []
+            else:
+                existing_data[platform_name] = []
+        
+        for platform_name, data in platform_data.items():
+            try:
+                new_row = data['data']
+                formatted_new_row = []
+                
+                for i, field in enumerate(new_row):
+                    field_str = str(field) if field is not None else ""
+                    
+                    if platform_name == '123rf':
+                        if i == 1:
+                            formatted_new_row.append('""')
+                        elif i in [2, 3, 4]:
                             escaped_field = field_str.replace('"', '""')
                             formatted_new_row.append(f'"{escaped_field}"')
                         else:
                             formatted_new_row.append(field_str)
-                
-                else:
-                    if '"' in field_str:
-                        field_str = field_str.replace('"', '""')
-                    if ',' in field_str or '"' in field_str or '\n' in field_str:
-                        field_str = f'"{field_str}"'
-                    formatted_new_row.append(field_str)
-            
-            new_row_str = ','.join(formatted_new_row)
-            
-            existing_rows = existing_data.get(platform_name, [])
-            
-            valid_existing_rows = []
-            for row in existing_rows:
-                row = row.strip()
-                if row and row != '':
-                    expected_commas = len(data['header']) - 1
-                    if row.count(',') >= expected_commas:
-                        valid_existing_rows.append(row)
+                    
+                    elif platform_name == 'miri_canvas':
+                        if i == 1:
+                            formatted_new_row.append('""')
+                        elif i in [2, 3, 4, 6]:
+                            escaped_field = field_str.replace('"', '""')
+                            formatted_new_row.append(f'"{escaped_field}"')
+                        else:
+                            formatted_new_row.append(field_str)
+                            
+                    elif platform_name == 'vecteezy':
+                        if i in [2, 3]:
+                            escaped_field = field_str.replace('"', '""')
+                            if ',' in field_str or '"' in field_str or '\n' in field_str:
+                                formatted_new_row.append(f'"{escaped_field}"')
+                            else:
+                                formatted_new_row.append(escaped_field)
+                        else:
+                            if ',' in field_str or '"' in field_str or '\n' in field_str:
+                                escaped_field = field_str.replace('"', '""')
+                                formatted_new_row.append(f'"{escaped_field}"')
+                            else:
+                                formatted_new_row.append(field_str)
+                    
                     else:
-                        log_message(f"Warning: Skipping malformed backup row in {platform_name}: {row[:50]}...", "warning")
-            
-            all_data_rows = valid_existing_rows + [new_row_str]
-            
-            backup_file = os.path.join(backup_dir, f"{platform_name}_backup.txt")
-            with open(backup_file, 'w', newline='', encoding='utf-8') as txtfile:
-                header = data['header']
-                if platform_name == '123rf':
-                    txtfile.write(','.join(header) + '\n')
-                elif platform_name == 'miri_canvas':
-                    txtfile.write(','.join(header) + '\n')
-                else:
-                    header_line = ','.join([f'"{col}"' if ',' in col or '"' in col else col for col in header])
-                    txtfile.write(header_line + '\n')
+                        if '"' in field_str:
+                            field_str = field_str.replace('"', '""')
+                        if ',' in field_str or '"' in field_str or '\n' in field_str:
+                            field_str = f'"{field_str}"'
+                        formatted_new_row.append(field_str)
                 
-                for row_str in all_data_rows:
-                    if row_str.strip():
-                        txtfile.write(row_str + '\n')
-            
-            success_count += 1
-            
-        except Exception as e:
-            log_message(f"Error backup TXT {platform_name}: {e}", "error")
-            failed_platforms.append(platform_name)
+                new_row_str = ','.join(formatted_new_row)
+                
+                existing_rows = existing_data.get(platform_name, [])
+                
+                valid_existing_rows = []
+                for row in existing_rows:
+                    row = row.strip()
+                    if row and row != '':
+                        expected_commas = len(data['header']) - 1
+                        if row.count(',') >= expected_commas:
+                            valid_existing_rows.append(row)
+                        else:
+                            log_message(f"Warning: Skipping malformed backup row in {platform_name}: {row[:50]}...", "warning")
+                
+                all_data_rows = valid_existing_rows + [new_row_str]
+                
+                backup_file = os.path.join(backup_dir, f"{platform_name}_backup.txt")
+                with open(backup_file, 'w', newline='', encoding='utf-8') as txtfile:
+                    header = data['header']
+                    if platform_name == '123rf':
+                        txtfile.write(','.join(header) + '\n')
+                    elif platform_name == 'miri_canvas':
+                        txtfile.write(','.join(header) + '\n')
+                    else:
+                        header_line = ','.join([f'"{col}"' if ',' in col or '"' in col else col for col in header])
+                        txtfile.write(header_line + '\n')
+                    
+                    for row_str in all_data_rows:
+                        if row_str.strip():
+                            txtfile.write(row_str + '\n')
+                
+                success_count += 1
+                
+            except Exception as e:
+                log_message(f"Error backup TXT {platform_name}: {e}", "error")
+                failed_platforms.append(platform_name)
     
-    return success_count, failed_platforms
+def write_123rf_csv(csv_path, filename, description, keywords):
+    return write_123rf_csv_safe(csv_path, filename, description, keywords)
+
+def write_vecteezy_csv(csv_path, filename, title, description, keywords):
+    return write_vecteezy_csv_safe(csv_path, filename, title, description, keywords)
+
+def write_miri_canvas_csv(csv_path, filename, title, keywords):
+    return write_miri_canvas_csv_safe(csv_path, filename, title, keywords)
+
+def write_platform_specific_txt_backups(backup_dir, filename, safe_title, safe_description, keywords, as_keywords, ss_keywords, as_category, ss_category, is_vector=False):
+    return write_platform_specific_txt_backups_safe(backup_dir, filename, safe_title, safe_description, keywords, as_keywords, ss_keywords, as_category, ss_category, is_vector)

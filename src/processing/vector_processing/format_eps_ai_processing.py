@@ -21,6 +21,7 @@ import subprocess
 import platform
 from src.utils.logging import log_message
 from src.api.gemini_api import check_stop_event
+from src.utils.compression import compress_image
 
 def convert_eps_to_jpg(eps_path, output_jpg_path, ghostscript_path, stop_event=None):
     filename = os.path.basename(eps_path)
@@ -113,14 +114,24 @@ def convert_eps_to_jpg(eps_path, output_jpg_path, ghostscript_path, stop_event=N
                     from PIL import Image
                     with Image.open(output_jpg_path) as img:
                         img.verify()
-                    log_message(f"✓ Conversion of EPS/AI to JPG successful and file valid: {os.path.basename(output_jpg_path)}")
                 except Exception as img_err:
                     log_message(f"✗ JPEG result of conversion corrupt or invalid: {img_err}")
                     if os.path.exists(output_jpg_path):
                         try: os.remove(output_jpg_path)
                         except Exception: pass
                     return False, f"Ghostscript successful but JPEG result corrupt: {img_err}"
-                
+                # Compress down to dimension cap to reduce tokens
+                try:
+                    compressed_path, is_compressed = compress_image(output_jpg_path, os.path.dirname(output_jpg_path))
+                    if is_compressed and compressed_path and os.path.exists(compressed_path):
+                        try:
+                            os.replace(compressed_path, output_jpg_path)
+                            log_message(f"Compressed rasterized vector: {os.path.basename(output_jpg_path)}")
+                        except Exception:
+                            pass
+                except Exception as e_comp:
+                    log_message(f"Warning: Failed to compress rasterized vector: {e_comp}")
+
                 success = True
                 final_error_message = None
             else:

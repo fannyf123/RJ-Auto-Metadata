@@ -41,7 +41,7 @@ def extract_frames_from_video(video_path, output_folder, num_frames=3, stop_even
         duration = total_frames / fps if fps > 0 else 0
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        log_message(f"Video: {width}x{height}, {fps:.2f} fps, {duration:.2f} detik, {total_frames} frame")
+        log_message(f"Video: {width}x{height}, {fps:.2f} fps, {duration:.2f} seconds, {total_frames} frames")
 
         if total_frames <= 0:
             log_message(f"Error: Video has no frames: {filename}")
@@ -95,7 +95,7 @@ def extract_frames_from_video(video_path, output_folder, num_frames=3, stop_even
 
             if success and os.path.exists(frame_path):
                 extracted_frames.append(frame_path)
-                log_message(f"Frame {i+1}/{len(frame_positions)} extracted: {os.path.basename(frame_path)}")
+                # log_message(f"Frame {i+1}/{len(frame_positions)} extracted: {os.path.basename(frame_path)}")
             else:
                 log_message(f"Error: Failed to save frame {i+1} from {filename}")
 
@@ -154,24 +154,18 @@ def process_video(input_path, output_dir, selected_api_key: str, stop_event, aut
 
         frame_filename = os.path.basename(frame_path)
         try:
-            frame_size_mb = os.path.getsize(frame_path) / (1024 * 1024)
-            if frame_size_mb > 2:
-                log_message(f"Frame {frame_filename} ({frame_size_mb:.2f}MB) perlu kompresi.")
-                compressed_path, is_compressed = compress_image(
-                    frame_path, chosen_temp_folder, stop_event=stop_event
-                )
-
-                if is_compressed and compressed_path and os.path.exists(compressed_path):
-                    log_message(f"Compression of frame successful: {os.path.basename(compressed_path)}")
-                    frames_for_api.append(compressed_path)
-                    compressed_frames_to_clean.append(compressed_path)
-                    try: os.remove(frame_path)
-                    except Exception: pass
-                else:
-                    log_message(f"Compression of frame failed. Using original frame: {frame_filename}")
-                    frames_for_api.append(frame_path)
+            # Always attempt compression to enforce dimension cap even if small
+            compressed_path, is_compressed = compress_image(
+                frame_path, chosen_temp_folder, stop_event=stop_event
+            )
+            if is_compressed and compressed_path and os.path.exists(compressed_path):
+                log_message(f"Compression/dimension cap applied to frame: {os.path.basename(compressed_path)}")
+                frames_for_api.append(compressed_path)
+                compressed_frames_to_clean.append(compressed_path)
+                try: os.remove(frame_path)
+                except Exception: pass
             else:
-                log_message(f"Frame {frame_filename} ({frame_size_mb:.2f}MB) does not need compression.")
+                log_message(f"No compression needed for frame: {frame_filename}")
                 frames_for_api.append(frame_path)
         except Exception as e_comp:
              log_message(f"Error when compressing frame {frame_filename}: {e_comp}")
@@ -193,7 +187,6 @@ def process_video(input_path, output_dir, selected_api_key: str, stop_event, aut
              best_frame = frames_for_api[middle_index]
         else:
              best_frame = frames_for_api[0]
-        log_message(f"Menggunakan {os.path.basename(best_frame)} sebagai frame utama untuk API")
 
     if not frames_for_api or len(frames_for_api) == 0:
         log_message(f"Error: No frames available for API processing: {filename}")
@@ -202,8 +195,6 @@ def process_video(input_path, output_dir, selected_api_key: str, stop_event, aut
                  if os.path.exists(frame): os.remove(frame)
              except Exception: pass
         return "failed_frames", None, None
-
-    log_message(f"Sending {len(frames_for_api)} frames to API Gemini for video analysis...")
     metadata_result = get_gemini_metadata(frames_for_api, selected_api_key, stop_event, use_video_prompt=True, selected_model_input=selected_model, keyword_count=keyword_count, priority=priority)
 
     all_frames_to_clean = list(set(extracted_frames + compressed_frames_to_clean))
@@ -261,6 +252,9 @@ def process_video(input_path, output_dir, selected_api_key: str, stop_event, aut
             elif exif_status == "exif_failed":
                 log_message(f"Warning: Failed to write metadata to video {filename}, but process continued.", "warning")
                 final_status = "processed_exif_failed"
+            elif exif_status == "exif_timeout":
+                log_message(f"Warning: Exiftool timeout when writing metadata to video {filename}, but process continued.", "warning")
+                final_status = "processed_exif_timeout"
             elif exif_status == "no_metadata":
                  log_message(f"Info: No metadata to write to video {filename}.")
                  final_status = "processed_no_exif"

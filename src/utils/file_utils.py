@@ -22,7 +22,10 @@ import csv
 import portalocker
 import hashlib
 import shutil
+import threading
 from src.utils.logging import log_message
+
+_csv_write_lock = threading.Lock()
 
 CSV_LOCK_EXTENSION = ".processing"
 TEMP_FILES_CREATED = []
@@ -37,7 +40,7 @@ def sanitize_filename(filename):
     sanitized = filename.replace('_', ' ')
     sanitized = re.sub(r'[^a-zA-Z0-9 ]', '', sanitized)
     sanitized = re.sub(r'\s+', ' ', sanitized).strip()
-    max_len = 160
+    max_len = 200
     if len(sanitized) > max_len:
         sanitized = sanitized[:max_len].strip()
     if not sanitized:
@@ -119,6 +122,38 @@ def write_to_csv_with_lock(csv_path, header, data_row):
     except Exception as e:
         log_message(f"Error writing CSV with locking: {e}")
         return False
+
+def write_to_csv_thread_safe(csv_path, header, data_row):
+    """Thread-safe CSV writing dengan global lock"""
+    with _csv_write_lock:
+        csv_dir = os.path.dirname(csv_path)
+        if not os.path.exists(csv_dir):
+            try:
+                os.makedirs(csv_dir)
+                log_message(f"Creating CSV directory: {csv_dir}")
+            except Exception as e:
+                log_message(f"Error: Failed to create CSV directory '{csv_dir}': {e}")
+                return False
+        
+        file_exists = os.path.isfile(csv_path)
+        try:
+            with open(csv_path, 'a', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile, quoting=csv.QUOTE_MINIMAL)
+                
+                # Atomic header check and write
+                if not file_exists or os.path.getsize(csv_path) == 0: 
+                    writer.writerow(header)
+                    csvfile.flush()  # Force header write
+                
+                # Write data row
+                writer.writerow(data_row)
+                csvfile.flush()  # Force data write
+                
+            return True
+            
+        except Exception as e:
+            log_message(f"Error: Failed to write to CSV file '{os.path.basename(csv_path)}': {e}")
+            return False
 
 def write_to_csv(csv_path, header, data_row):
     csv_dir = os.path.dirname(csv_path)

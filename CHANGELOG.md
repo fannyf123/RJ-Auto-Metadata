@@ -16,6 +16,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 -
 
+## [3.8.0] - 2025-08-08
+
+### Added
+- **Enhanced Metadata Embedding Support:** Comprehensive format-specific metadata strategies for better cross-format compatibility
+- **Thread-Safe CSV Export System:** Complete thread-safe implementation for high-concurrency batch processing
+- **Advanced Debug Logging:** Detailed logging for metadata processing pipeline and keyword limiting
+
+### Changed
+- **XMP-First Metadata Strategy:** Migrated from IPTC-first to XMP-first approach for better metadata preservation
+- **Smart Title Processing:** Enhanced title sanitization with consistent period appending (matches CSV export behavior)
+- **Format-Specific Strategies:** 
+  - **JPEG (.jpg/.jpeg)**: XMP + IPTC dual embedding (title, description, keywords)
+  - **Adobe Illustrator (.ai)**: XMP-only embedding (title, keywords)
+  - **EPS (.eps)**: Simple generic approach (description, keywords)
+  - **SVG (.svg)**: Disabled (not supported by ExifTool)
+  - **PNG (.png)**: Disabled (not supported by ExifTool)
+
+### Fixed
+- **Critical CSV Race Condition:** Resolved CSV corruption during high-concurrency processing (100 workers with more than 1000 files)
+- **CSV Backup Corruption:** Fixed backup TXT files corruption during concurrent writes
+- **Keyword Accumulation Bug:** Prevented metadata accumulation in EPS and AI files during re-processing
+- **Title Sanitization Bug:** Fixed colon (:) characters not being properly sanitized in embedded titles
+- **Memory Usage:** Optimized high-concurrency processing to reduce RAM consumption
+- **Thread Safety:** Implemented global locking mechanisms for all CSV write operations
+
+### Technical Improvements
+- **Thread-Safe CSV Functions:** 
+  - `write_to_csv_thread_safe()` with global locking
+  - Per-platform CSV locks (`_csv_locks`) for atomic operations
+  - Enhanced backup system with thread-safe TXT generation
+- **Metadata Clearing Enhancement:**
+  - Comprehensive metadata clearing before embedding new data
+  - Format-specific clearing strategies to prevent accumulation
+  - Double-reset approach for EPS and AI formats
+- **Robust Keyword Processing:**
+  - Enhanced keyword count parsing with safety limits
+  - Improved sanitization for all metadata fields
+
+### Performance
+- **High-Concurrency Support:** Successfully tested with 100 workers processing 1000+ files
+- **Reduced Memory Usage:** Optimized concurrent processing to prevent excessive RAM consumption
+- **Atomic Operations:** All CSV operations now atomic to prevent corruption
+
 ## [3.7.0] - 2025-07-15
 
 ### Added

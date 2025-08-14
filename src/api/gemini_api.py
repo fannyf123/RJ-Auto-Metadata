@@ -221,10 +221,34 @@ def select_next_model():
         return selected_model
 
 def wait_for_model_cooldown(model_name, stop_event=None):
-    return
+    try:
+        min_interval = 0.75
+        last_used = MODEL_LAST_USED.get(model_name, 0)
+        now = time.time()
+        remaining = last_used + min_interval - now
+        while remaining > 0:
+            if check_stop_event(stop_event):
+                return
+            time.sleep(min(remaining, 0.05))
+            now = time.time()
+            remaining = last_used + min_interval - now
+    except Exception:
+        return
 
 def wait_for_api_key_cooldown(api_key, stop_event=None):
-    return
+    try:
+        last_used = API_KEY_LAST_USED.get(api_key, 0)
+        now = time.time()
+        remaining = last_used + API_KEY_MIN_INTERVAL - now
+        while remaining > 0:
+            if check_stop_event(stop_event):
+                return
+            time.sleep(min(remaining, 0.05))
+            now = time.time()
+            remaining = last_used + API_KEY_MIN_INTERVAL - now
+        API_KEY_LAST_USED[api_key] = time.time()
+    except Exception:
+        return
 
 def _attempt_gemini_request(
     image_paths,
@@ -304,18 +328,16 @@ def _attempt_gemini_request(
             return -3, None, "file_read", str(e)
 
     max_output_tokens = 800
-    
+    # Cap output tokens to reduce cost/limits for metadata tasks
     if "gemini-2.5-pro" in model_to_use:
-        max_output_tokens = 15000
-            
+        max_output_tokens = 7000
     elif "gemini-2.5-flash" in model_to_use and "lite" not in model_to_use:
-        max_output_tokens = 12000
-            
+        max_output_tokens = 7000
     elif "gemini-2.5-flash-lite-preview-06-17" in model_to_use:
-        max_output_tokens = 15000
+        max_output_tokens = 800
     
     payload = {
-        "contents": [{"parts": parts}],
+        "contents": [{"role": "user", "parts": parts}],
         "safetySettings": [
             {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
             {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
