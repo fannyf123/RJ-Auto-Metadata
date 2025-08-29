@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Enhanced platform detection in `src/metadata/exif_writer.py` and `src/utils/system_checks.py` with proper conditional subprocess flags
   - Improved SVG processing with multi-method conversion fallback (CairoSVG → svglib → Ghostscript) for better macOS support
   - Added macOS-specific dependency paths for ExifTool, Ghostscript, and FFmpeg detection
+  - **Python Version Compatibility:** Fixed union type annotations (`|`) causing "unsupported operand type" errors on Python < 3.10
+    - Removed modern type hints that are incompatible with older Python versions commonly found on macOS
+    - Added `from __future__ import annotations` for better forward compatibility
 
 ### Added
 - **Comprehensive Cross-Platform Documentation:** Created extensive platform-specific setup guides

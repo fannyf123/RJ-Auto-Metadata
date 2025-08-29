@@ -3,18 +3,16 @@
 # Usage: curl -fsSL https://raw.githubusercontent.com/riiicil/RJ-Auto-Metadata/main/setup_macos.sh | bash
 # Or: chmod +x setup_macos.sh && ./setup_macos.sh
 
-set -e  # Exit on any error
+set -e 
 
 echo "🍎 RJ Auto Metadata - macOS One-Command Setup"
 echo "=============================================="
 
-# Check if we're on macOS
 if [[ "$OSTYPE" != "darwin"* ]]; then
     echo "❌ This script is for macOS only"
     exit 1
 fi
 
-# Check macOS version
 macos_version=$(sw_vers -productVersion)
 macos_major=$(echo "$macos_version" | cut -d. -f1)
 macos_minor=$(echo "$macos_version" | cut -d. -f2)
@@ -23,7 +21,6 @@ echo "📋 System Information:"
 echo "  - macOS Version: $macos_version"
 echo "  - Architecture: $(uname -m)"
 
-# Check macOS compatibility
 if [[ $macos_major -lt 10 ]] || [[ $macos_major -eq 10 && $macos_minor -lt 14 ]]; then
     echo "⚠️  WARNING: macOS $macos_version is quite old."
     echo "   Recommended: macOS 10.14 (Mojave) or newer"
@@ -37,17 +34,14 @@ if [[ $macos_major -lt 10 ]] || [[ $macos_major -eq 10 && $macos_minor -lt 14 ]]
     fi
 fi
 
-# Function to check if command exists
 command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-# Function to add to PATH
 add_to_path() {
     local path_to_add="$1"
     local shell_profile=""
     
-    # Detect shell and profile file
     if [[ "$SHELL" == *"zsh"* ]]; then
         shell_profile="$HOME/.zshrc"
     elif [[ "$SHELL" == *"bash"* ]]; then
@@ -56,7 +50,6 @@ add_to_path() {
         shell_profile="$HOME/.profile"
     fi
     
-    # Add to PATH if not already there
     if [[ ":$PATH:" != *":$path_to_add:"* ]]; then
         echo "export PATH=\"$path_to_add:\$PATH\"" >> "$shell_profile"
         export PATH="$path_to_add:$PATH"
@@ -64,7 +57,6 @@ add_to_path() {
     fi
 }
 
-# Install Xcode Command Line Tools if needed
 if ! command_exists xcode-select || ! xcode-select -p &>/dev/null; then
     echo "📱 Installing Xcode Command Line Tools..."
     echo "   A dialog will appear - click 'Install' and wait for completion."
@@ -75,22 +67,18 @@ else
     echo "✅ Xcode Command Line Tools already installed"
 fi
 
-# Check if Homebrew is installed
 if ! command_exists brew; then
     echo ""
     echo "🍺 Homebrew not found. Installing Homebrew..."
     echo "   This may take several minutes..."
     
-    # Install Homebrew
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     
-    # Add Homebrew to PATH based on architecture
     if [[ $(uname -m) == "arm64" ]]; then
         # Apple Silicon
         add_to_path "/opt/homebrew/bin"
         eval "$(/opt/homebrew/bin/brew shellenv)"
     else
-        # Intel Mac
         add_to_path "/usr/local/bin"
         eval "$(/usr/local/bin/brew shellenv)"
     fi
@@ -100,7 +88,6 @@ else
     brew_version=$(brew --version | head -1)
     echo "✅ Homebrew found: $brew_version"
     
-    # Ensure Homebrew paths are set
     if [[ $(uname -m) == "arm64" ]]; then
         eval "$(/opt/homebrew/bin/brew shellenv)" 2>/dev/null || true
     else
@@ -108,48 +95,82 @@ else
     fi
 fi
 
-# Update Homebrew
 echo ""
 echo "🔄 Updating Homebrew..."
 brew update || echo "⚠️ Homebrew update failed, continuing..."
 
-# Install Python if needed
 echo ""
 echo "🐍 Checking Python installation..."
+python_gui_compatible=false
+
 if command_exists python3; then
     python_version=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')")
-    python_major=$(echo "$python_version" | cut -d. -f1)
-    python_minor=$(echo "$python_version" | cut -d. -f2)
+    python_path=$(which python3)
     
-    if [[ $python_major -eq 3 && $python_minor -ge 9 ]]; then
-        echo "  ✅ Python $python_version is compatible"
+    echo "  📍 Found Python $python_version at: $python_path"
+    
+    if [[ "$python_path" == *"/Library/Frameworks/Python.framework"* ]] || [[ "$python_path" == *"/usr/bin/python3"* ]]; then
+        echo "  ✅ Python appears to be GUI-compatible (Framework build)"
+        python_gui_compatible=true
     else
-        echo "  ⚠️ Python $python_version may not be fully compatible (3.9+ recommended)"
-        echo "  Installing Python 3.11 via Homebrew..."
-        brew install python@3.11
-        add_to_path "$(brew --prefix python@3.11)/bin"
+        echo "  ⚠️ Python from Homebrew detected - may have GUI issues"
+        echo "     CustomTkinter requires Framework Python for proper GUI rendering"
     fi
 else
-    echo "  📦 Installing Python 3.11..."
-    brew install python@3.11
-    add_to_path "$(brew --prefix python@3.11)/bin"
+    echo "  ❌ Python 3 not found"
 fi
 
-# Install external tools
+if [[ "$python_gui_compatible" != true ]]; then
+    echo ""
+    echo "🔧 GUI Compatibility Fix Required:"
+    echo "   For proper GUI functionality, please install Python from python.org"
+    echo "   This ensures CustomTkinter works correctly on macOS."
+    echo ""
+    echo "📥 Downloading Python installer..."
+    
+    if [[ $(uname -m) == "arm64" ]]; then
+        python_installer_url="https://www.python.org/ftp/python/3.12.5/python-3.12.5-macos11.pkg"
+        echo "  🔽 Apple Silicon detected - downloading Universal installer"
+    else
+        python_installer_url="https://www.python.org/ftp/python/3.12.5/python-3.12.5-macos10.9.pkg"
+        echo "  🔽 Intel Mac detected - downloading Intel installer"
+    fi
+    
+    curl -L -o python_installer.pkg "$python_installer_url"
+    
+    echo ""
+    echo "📦 Please install Python manually:"
+    echo "   1. Double-click: python_installer.pkg"
+    echo "   2. Follow the installation wizard"
+    echo "   3. ⚠️ IMPORTANT: Select 'Add Python to PATH' if prompted"
+    echo "   4. After installation, re-run this setup script"
+    echo ""
+    echo "🔄 After Python installation, run:"
+    echo "   curl -fsSL https://raw.githubusercontent.com/riiicil/RJ-Auto-Metadata/main/setup_macos.sh | bash"
+    echo ""
+    
+    if command_exists open; then
+        echo "🚀 Opening installer..."
+        open python_installer.pkg
+    fi
+    
+    echo "Setup paused. Please install Python and re-run this script."
+    exit 0
+fi
+
 echo ""
 echo "🔧 Installing external tools..."
 echo "   This may take 10-15 minutes depending on your internet connection..."
 
-# Essential tools for RJ Auto Metadata
 essential_tools=(
-    "ghostscript"      # For AI/EPS vector processing
-    "ffmpeg"          # For video processing  
-    "exiftool"        # For metadata writing
-    "cairo"           # For SVG rendering
-    "pango"           # For text rendering in SVG
-    "gdk-pixbuf"      # For image loading in SVG
-    "librsvg"         # For SVG processing
-    "pkg-config"      # For building native extensions
+    "ghostscript"
+    "ffmpeg"
+    "exiftool"
+    "cairo"
+    "pango"
+    "gdk-pixbuf"
+    "librsvg"
+    "pkg-config"
 )
 
 failed_installs=()
@@ -208,22 +229,41 @@ python3 -m pip install --upgrade pip
 
 # Install requirements with some retry logic
 if python3 -m pip install -r requirements.txt; then
-    echo "  ✅ Python dependencies installed successfully"
+    echo "  ✅ Base requirements installed successfully"
 else
     echo "  ⚠️ Some dependencies failed to install. Trying individual installation..."
     
     # Try installing problematic packages individually
     problematic_packages=("cairocffi" "cairosvg")
     for pkg in "${problematic_packages[@]}"; do
-        echo "  � Trying to install $pkg..."
+        echo "  📦 Trying to install $pkg..."
         python3 -m pip install --no-cache-dir "$pkg" || echo "    ❌ $pkg failed"
     done
     
     # Try installing requirements again
     python3 -m pip install -r requirements.txt || echo "    ⚠️ Some packages may still be missing"
 fi
+echo "  📦 Installing additional macOS dependencies..."
+additional_packages=(
+    "Flask-SQLAlchemy"
+    "Pillow"
+    "svglib"
+    "reportlab"
+    "cairocffi"
+    "requests"
+    "google-genai" 
+    "portalocker"
+    "CairoSVG"
+    "customtkinter"
+    "setuptools"
+)
 
-# Run compatibility test
+for pkg in "${additional_packages[@]}"; do
+    echo "  📦 Installing $pkg..."
+    python3 -m pip install "$pkg" || echo "    ⚠️ $pkg installation failed"
+done
+
+echo "  ✅ Python dependencies installation completed"
 echo ""
 echo "🧪 Running cross-platform compatibility test..."
 if python3 test_cross_platform.py; then
@@ -232,7 +272,6 @@ else
     echo "  ⚠️ Compatibility test had issues, but app may still work"
 fi
 
-# Verify external tools
 echo ""
 echo "🔍 Verifying external tools..."
 tools_status=()
@@ -264,7 +303,6 @@ else
     tools_status+=("exiftool:missing")
 fi
 
-# Test SVG capabilities
 echo "  🧪 Testing SVG processing..."
 python3 -c "
 import sys
@@ -282,7 +320,6 @@ except ImportError:
     print('  ❌ svglib/reportlab not available')
 " 2>/dev/null
 
-# Create run script
 echo ""
 echo "📝 Creating run script..."
 cat > run_app.sh << 'EOF'
@@ -309,14 +346,12 @@ EOF
 
 chmod +x run_app.sh
 
-# Final setup report
 echo ""
 echo "🎉 Setup completed!"
 echo "=============================================="
 echo "📁 Project location: $project_dir"
 echo ""
 
-# Count successful tools
 successful_tools=0
 for status in "${tools_status[@]}"; do
     if [[ "$status" == *":ok" ]]; then
@@ -348,9 +383,6 @@ echo "   ./run_app.sh"
 echo ""
 echo "📚 For help:"
 echo "   - Quick Guide: cat QUICK_START_GUIDE.md"
-echo "   - macOS Guide: cat README_macOS.md"
 echo "   - Full Manual: cat README.md"
-echo ""
-echo "🔧 If you have SVG issues, run: ./fix_svg_macos.sh"
 echo ""
 echo "Happy processing! 🎨"

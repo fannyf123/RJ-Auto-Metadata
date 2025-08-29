@@ -15,6 +15,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 # src/api/gemini_api.py
+from __future__ import annotations
 import os
 import sys
 import random
@@ -69,7 +70,7 @@ def should_use_sdk(model_name: str) -> bool:
     
     return "2.5" in model_name
 
-def get_thinking_config_for_model(model_name: str) -> dict | None:
+def get_thinking_config_for_model(model_name: str):
  
     if not should_use_sdk(model_name):
         return None
@@ -104,7 +105,7 @@ def calculate_smart_delay(api_keys_list: list, user_delay: float) -> tuple[float
         return user_delay, "No API keys available"
     return user_delay, f"Using user delay ({len(api_keys_list)} keys available)"
 
-def select_smart_api_key(api_keys_list: list) -> str | None:
+def select_smart_api_key(api_keys_list: list):
     if not api_keys_list:
         return None
 
@@ -120,7 +121,7 @@ def select_smart_api_key(api_keys_list: list) -> str | None:
         API_KEY_LAST_USED[selected_key] = now
         return selected_key
 
-def select_best_fallback_model(fallback_models_list: list, excluded_model_name: str | None = None) -> str | None:
+def select_best_fallback_model(fallback_models_list: list, excluded_model_name=None):
     if not fallback_models_list:
         return None
 
@@ -592,7 +593,7 @@ def _attempt_gemini_rest_request(
         log_message(f"API Error [{model_to_use}] untuk {image_basename}: HTTP {http_status_code}, Code API: {api_error_code} - {api_error_message}", "error")
         return http_status_code, response_data, "api_error", api_error_message
 
-def _extract_metadata_from_text(generated_text: str, keyword_count: str) -> dict | None:
+def _extract_metadata_from_text(generated_text: str, keyword_count: str):
     """Extract metadata from Gemini response - handles both JSON structured output and legacy text format"""
     title = ""
     description = ""
