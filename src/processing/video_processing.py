@@ -113,7 +113,7 @@ def extract_frames_from_video(video_path, output_folder, num_frames=3, stop_even
         log_message(f"Detail error: {traceback.format_exc()}")
         return None
 
-def process_video(input_path, output_dir, selected_api_key: str, stop_event, auto_kategori_enabled=True, selected_model=None, keyword_count="49", priority="Details"):
+def process_video(input_path, output_dir, selected_api_key: str, stop_event, auto_kategori_enabled=True, selected_model=None, embedding_enabled=True, keyword_count="49", priority="Details"):
     filename = os.path.basename(input_path)
     _, ext = os.path.splitext(filename)
     ext_lower = ext.lower()
@@ -239,35 +239,40 @@ def process_video(input_path, output_dir, selected_api_key: str, stop_event, aut
 
     final_status = "processed_no_exif"
     if ext_lower in WRITABLE_METADATA_VIDEO_EXTENSIONS:
-        try:
-            proceed, exif_status = write_exif_to_video(input_path, output_path, metadata, stop_event)
+        # CONDITIONAL EMBEDDING: Skip EXIF embedding if disabled
+        if not embedding_enabled:
+            log_message(f"Embedding disabled - skipping EXIF metadata for video: {filename}")
+            final_status = "processed_no_exif"
+        else:
+            try:
+                proceed, exif_status = write_exif_to_video(input_path, output_path, metadata, stop_event)
 
-            if not proceed:
-                 log_message(f"Process stopped or critical failure when writing metadata video for {filename} (Status: {exif_status})")
-                 return f"failed_{exif_status}", metadata, output_path
+                if not proceed:
+                     log_message(f"Process stopped or critical failure when writing metadata video for {filename} (Status: {exif_status})")
+                     return f"failed_{exif_status}", metadata, output_path
 
-            if exif_status == "exif_ok":
-                log_message(f"Successfully wrote metadata to video: {filename}")
-                final_status = "processed_exif"
-            elif exif_status == "exif_failed":
-                log_message(f"Warning: Failed to write metadata to video {filename}, but process continued.", "warning")
+                if exif_status == "exif_ok":
+                    log_message(f"Embedding enabled - EXIF metadata written for video: {filename}")
+                    final_status = "processed_exif"
+                elif exif_status == "exif_failed":
+                    log_message(f"Warning: Failed to write metadata to video {filename}, but process continued.", "warning")
+                    final_status = "processed_exif_failed"
+                elif exif_status == "exif_timeout":
+                    log_message(f"Warning: Exiftool timeout when writing metadata to video {filename}, but process continued.", "warning")
+                    final_status = "processed_exif_timeout"
+                elif exif_status == "no_metadata":
+                     log_message(f"Info: No metadata to write to video {filename}.")
+                     final_status = "processed_no_exif"
+                elif exif_status == "exiftool_not_found":
+                     log_message(f"Error: Exiftool not found when trying to write metadata video for {filename}.", "error")
+                     final_status = "processed_exif_failed"
+                else:
+                     log_message(f"Unknown EXIF video status '{exif_status}' for {filename}", "warning")
+                     final_status = "processed_unknown_exif_status"
+
+            except Exception as e_write:
+                log_message(f"Error when calling write_exif_to_video: {e_write}")
                 final_status = "processed_exif_failed"
-            elif exif_status == "exif_timeout":
-                log_message(f"Warning: Exiftool timeout when writing metadata to video {filename}, but process continued.", "warning")
-                final_status = "processed_exif_timeout"
-            elif exif_status == "no_metadata":
-                 log_message(f"Info: No metadata to write to video {filename}.")
-                 final_status = "processed_no_exif"
-            elif exif_status == "exiftool_not_found":
-                 log_message(f"Error: Exiftool not found when trying to write metadata video for {filename}.", "error")
-                 final_status = "processed_exif_failed"
-            else:
-                 log_message(f"Unknown EXIF video status '{exif_status}' for {filename}", "warning")
-                 final_status = "processed_unknown_exif_status"
-
-        except Exception as e_write:
-            log_message(f"Error when calling write_exif_to_video: {e_write}")
-            final_status = "processed_exif_failed"
     else:
         log_message(f"Format {ext_lower} is not optimal for metadata, metadata not written to file.")
         final_status = "processed_no_exif"

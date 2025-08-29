@@ -31,11 +31,39 @@ from src.processing.image_processing.format_png_processing import process_png
 from src.processing.vector_processing.format_eps_ai_processing import convert_eps_to_jpg
 from src.processing.vector_processing.format_svg_processing import convert_svg_to_jpg
 from src.processing.video_processing import process_video
-from src.api.gemini_api import check_stop_event, is_stop_requested, select_smart_api_key
+from src.api.gemini_api import check_stop_event, is_stop_requested, select_smart_api_key, calculate_smart_delay
 from src.metadata.csv_exporter import write_to_platform_csvs
 from src.metadata.exif_writer import write_exif_with_exiftool
 
-def process_vector_file(input_path, output_dir, selected_api_key: str, ghostscript_path, stop_event, auto_kategori_enabled=True, selected_model=None, keyword_count="49", priority="Details"):
+# Auto Retry Configuration
+RETRYABLE_STATUSES = {
+    "failed_api": {"priority": "HIGH", "max_attempts": 5},      # Rate limit/API error
+    "failed_copy": {"priority": "MEDIUM", "max_attempts": 3},   # File copy issue
+    "failed_conversion": {"priority": "MEDIUM", "max_attempts": 3}, # Vector conversion
+    "failed_frames": {"priority": "MEDIUM", "max_attempts": 3}, # Video frame extraction
+    "failed_worker": {"priority": "MEDIUM", "max_attempts": 2}, # Worker thread error
+    "failed_timeout": {"priority": "MEDIUM", "max_attempts": 2}, # Timeout error
+    "failed_exception": {"priority": "LOW", "max_attempts": 2}, # Generic exception
+    # Debug statuses for testing
+    "debug_artificial_failure": {"priority": "HIGH", "max_attempts": 3}, # Testing debug failures
+}
+
+NON_RETRYABLE_STATUSES = {
+    "failed_format", "failed_empty", "failed_input_missing"  # Permanent failures
+}
+
+def is_retryable(status: str, attempt: int) -> bool:
+    """Check if a status is retryable and within attempt limits"""
+    if status in NON_RETRYABLE_STATUSES:
+        return False
+    
+    if status in RETRYABLE_STATUSES:
+        max_attempts = RETRYABLE_STATUSES[status]["max_attempts"]
+        return attempt < max_attempts
+    
+    return False
+
+def process_vector_file(input_path, output_dir, selected_api_key: str, ghostscript_path, stop_event, auto_kategori_enabled=True, selected_model=None, embedding_enabled=True, keyword_count="49", priority="Details"):
     filename = os.path.basename(input_path)
     _, ext = os.path.splitext(filename)
     ext_lower = ext.lower()
@@ -131,14 +159,37 @@ def process_vector_file(input_path, output_dir, selected_api_key: str, ghostscri
         
         if isinstance(metadata, dict):
             metadata['keyword_count'] = keyword_count
+            
+        # CONDITIONAL EMBEDDING: Skip EXIF embedding if disabled
+        if not embedding_enabled:
+            log_message(f"Embedding disabled - skipping EXIF metadata for vector file: {filename}")
+            return "processed_no_exif", metadata, initial_output_path
+            
         proceed, exif_status = write_exif_with_exiftool(input_path, initial_output_path, metadata, stop_event)
         
-        return "processed_no_exif", metadata, initial_output_path
+        if not proceed:
+            log_message(f"Process stopped or critical failure when writing EXIF for vector {filename} (Status: {exif_status})")
+            return f"failed_{exif_status}", metadata, initial_output_path
+            
+        if exif_status == "exif_ok":
+            log_message(f"Embedding enabled - EXIF metadata written for vector file: {filename}")
+            return "processed_exif", metadata, initial_output_path
+        elif exif_status == "exif_failed":
+            log_message(f"Warning: Failed to write EXIF for vector {filename}, but process continued.", "warning")
+            return "processed_exif_failed", metadata, initial_output_path
+        elif exif_status == "no_metadata":
+            return "processed_no_exif", metadata, initial_output_path
+        elif exif_status == "exiftool_not_found":
+            log_message(f"Error: Exiftool not found when writing EXIF for vector {filename}.", "error")
+            return "processed_exif_failed", metadata, initial_output_path
+        else:
+            log_message(f"Status EXIF not recognized '{exif_status}' for vector {filename}", "warning")
+            return "processed_unknown_exif_status", metadata, initial_output_path
     except Exception as e:
         log_message(f"Failed to copy {filename}: {e}")
         return "failed_copy", metadata, None
 
-def process_image(input_path, output_dir, selected_api_key: str, ghostscript_path, stop_event, auto_kategori_enabled=True, selected_model=None, keyword_count="49", priority="Details"):
+def process_image(input_path, output_dir, selected_api_key: str, ghostscript_path, stop_event, auto_kategori_enabled=True, selected_model=None, embedding_enabled=True, keyword_count="49", priority="Details"):
     filename = os.path.basename(input_path)
     _, ext = os.path.splitext(filename)
     ext_lower = ext.lower()
@@ -154,17 +205,17 @@ def process_image(input_path, output_dir, selected_api_key: str, ghostscript_pat
     
     if ext_lower == '.png':
         from src.processing.image_processing.format_png_processing import process_png
-        return process_png(input_path, output_dir, selected_api_key, stop_event, auto_kategori_enabled, selected_model=selected_model, keyword_count=keyword_count, priority=priority)
+        return process_png(input_path, output_dir, selected_api_key, stop_event, auto_kategori_enabled, selected_model=selected_model, embedding_enabled=embedding_enabled, keyword_count=keyword_count, priority=priority)
     elif ext_lower in ['.eps', '.ai', '.svg']:
-        return process_vector_file(input_path, output_dir, selected_api_key, ghostscript_path, stop_event, auto_kategori_enabled, selected_model=selected_model, keyword_count=keyword_count, priority=priority)
+        return process_vector_file(input_path, output_dir, selected_api_key, ghostscript_path, stop_event, auto_kategori_enabled, selected_model=selected_model, embedding_enabled=embedding_enabled, keyword_count=keyword_count, priority=priority)
     elif ext_lower in ['.jpg', '.jpeg']:
         from src.processing.image_processing.format_jpg_jpeg_processing import process_jpg_jpeg
-        return process_jpg_jpeg(input_path, output_dir, selected_api_key, stop_event, auto_kategori_enabled, selected_model=selected_model, keyword_count=keyword_count, priority=priority)
+        return process_jpg_jpeg(input_path, output_dir, selected_api_key, stop_event, auto_kategori_enabled, selected_model=selected_model, embedding_enabled=embedding_enabled, keyword_count=keyword_count, priority=priority)
     else:
         log_message(f"Format file tidak didukung: {ext_lower}")
         return "failed_format", None, None
 
-def process_single_file(input_path, output_dir, api_keys_list, ghostscript_path, rename_enabled, auto_kategori_enabled, auto_foldering_enabled, selected_model=None, keyword_count="49", priority="Details", stop_event=None):
+def process_single_file(input_path, output_dir, api_keys_list, ghostscript_path, rename_enabled, auto_kategori_enabled, auto_foldering_enabled, selected_model=None, embedding_enabled=True, keyword_count="49", priority="Details", stop_event=None):
     if stop_event is None:
         import threading
         stop_event = threading.Event()
@@ -232,19 +283,21 @@ def process_single_file(input_path, output_dir, api_keys_list, ghostscript_path,
         
         if is_video:
             status, processed_metadata, initial_output_path = process_video(
-                input_path, target_output_dir, selected_api_key, stop_event, auto_kategori_enabled, selected_model, keyword_count, priority
+                input_path, target_output_dir, selected_api_key, stop_event, auto_kategori_enabled, selected_model, embedding_enabled, keyword_count, priority
             )
         elif ext_lower in ['.eps', '.ai', '.svg']:
             status, processed_metadata, initial_output_path = process_vector_file(
-                input_path, target_output_dir, selected_api_key, ghostscript_path, stop_event, auto_kategori_enabled, selected_model, keyword_count, priority
+                input_path, target_output_dir, selected_api_key, ghostscript_path, stop_event, auto_kategori_enabled, selected_model, embedding_enabled, keyword_count, priority
             )
         elif ext_lower in ['.jpg', '.jpeg']:
+            from src.processing.image_processing.format_jpg_jpeg_processing import process_jpg_jpeg
             status, processed_metadata, initial_output_path = process_jpg_jpeg(
-                input_path, target_output_dir, selected_api_key, stop_event, auto_kategori_enabled, selected_model, keyword_count, priority
+                input_path, target_output_dir, selected_api_key, stop_event, auto_kategori_enabled, selected_model, embedding_enabled, keyword_count, priority
             )
         elif ext_lower == '.png':
+            from src.processing.image_processing.format_png_processing import process_png
             status, processed_metadata, initial_output_path = process_png(
-                input_path, target_output_dir, selected_api_key, stop_event, auto_kategori_enabled, selected_model, keyword_count, priority
+                input_path, target_output_dir, selected_api_key, stop_event, auto_kategori_enabled, selected_model, embedding_enabled, keyword_count, priority
             )
         else:
             log_message(f"Unsupported file format for API: {ext_lower}")
@@ -351,7 +404,7 @@ def process_single_file(input_path, output_dir, api_keys_list, ghostscript_path,
         "new_filename": new_filename
     }
 
-def batch_process_files(input_dir, output_dir, api_keys, ghostscript_path, rename_enabled, delay_seconds, num_workers, auto_kategori_enabled, auto_foldering_enabled, progress_callback=None, stop_event=None, selected_model=None, keyword_count="49", priority="Details", bypass_api_key_limit=False):
+def batch_process_files(input_dir, output_dir, api_keys, ghostscript_path, rename_enabled, delay_seconds, num_workers, auto_kategori_enabled, auto_foldering_enabled, progress_callback=None, stop_event=None, selected_model=None, embedding_enabled=True, auto_retry_enabled=False, keyword_count="49", priority="Details", bypass_api_key_limit=False):
     log_message(f"Starting process ({num_workers} worker, delay {delay_seconds}s)", "warning")
     
     from src.api.gemini_api import reset_force_stop
@@ -434,6 +487,9 @@ def batch_process_files(input_dir, output_dir, api_keys, ghostscript_path, renam
         stopped_count = 0
         completed_count = 0
         
+        # Track failed files for Auto Retry
+        failed_files = []  # List of tuples: (input_path, status, attempt_count)
+        
         if not auto_foldering_enabled:
             csv_subfolder_main = os.path.join(output_dir, "metadata_csv")
             try:
@@ -458,11 +514,21 @@ def batch_process_files(input_dir, output_dir, api_keys, ghostscript_path, renam
             batch_index = 0
             while batch_index < len(files_to_process) and not (stop_event and stop_event.is_set() or is_stop_requested()):
                 if batch_index > 0 and delay_seconds > 0 and not (stop_event and stop_event.is_set() or is_stop_requested()):
-                    cooldown_msg = f"Cool-down {delay_seconds} seconds before processing..."
+                    # Calculate smart delay based on API key blacklist status
+                    effective_delay, delay_reason = calculate_smart_delay(api_keys, delay_seconds)
+                    
+                    if effective_delay != delay_seconds:
+                        # Smart delay override is active
+                        log_message(f"🔄 {delay_reason}", "warning")
+                        cooldown_msg = f"Smart Cool-down {effective_delay:.1f} seconds (API blacklist override)..."
+                    else:
+                        # Normal delay
+                        cooldown_msg = f"Cool-down {effective_delay} seconds before processing..."
+                    
                     log_message(cooldown_msg, "cooldown")
                     
                     cooldown_start = time.time()
-                    while time.time() - cooldown_start < delay_seconds:
+                    while time.time() - cooldown_start < effective_delay:
                         if stop_event and stop_event.is_set() or is_stop_requested():
                             log_message("Processing stopped during cooldown.", "warning")
                             break
@@ -505,6 +571,7 @@ def batch_process_files(input_dir, output_dir, api_keys, ghostscript_path, renam
                             auto_kategori_enabled,
                             auto_foldering_enabled,
                             selected_model,
+                            embedding_enabled,
                             keyword_count,
                             priority,
                             stop_event
@@ -562,6 +629,8 @@ def batch_process_files(input_dir, output_dir, api_keys, ghostscript_path, renam
                                 log_message(f"⊘ {filename} (stopped internally)", "warning")
                             else: 
                                 failed_count += 1
+                                # Track failed file for Auto Retry
+                                failed_files.append((input_path_result, status, 1))
                                 if status == "failed_api":
                                      log_message(f"✗ {filename} (API Error/Limit)", "error")
                                 elif status == "failed_copy":
@@ -577,14 +646,20 @@ def batch_process_files(input_dir, output_dir, api_keys, ghostscript_path, renam
                             
                         except concurrent.futures.TimeoutError:
                             completed_count += 1
-                            log_message(f"⨯ Timeout waiting for job results for {filename if 'filename' in locals() else 'unknown file'}", "error")
                             failed_count += 1
+                            # Track timeout as failed file for Auto Retry
+                            if 'input_path' in locals():
+                                failed_files.append((input_path, "failed_timeout", 1))
+                            log_message(f"⨯ Timeout waiting for job results for {filename if 'filename' in locals() else 'unknown file'}", "error")
                         except concurrent.futures.CancelledError:
                             log_message(f"Job cancelled.", "warning")
                             stopped_count += 1
                         except Exception as e:
                             log_message(f"Error processing results: {e}", "error")
                             failed_count += 1
+                            # Track exception as failed file for Auto Retry
+                            if 'input_path' in locals():
+                                failed_files.append((input_path, "failed_exception", 1))
                         
                         if progress_callback:
                             progress_callback(completed_count, total_files)
@@ -611,6 +686,138 @@ def batch_process_files(input_dir, output_dir, api_keys, ghostscript_path, renam
                     stopped_count += remaining_submitted
                     completed_count += remaining_submitted 
         
+        # AUTO RETRY LOGIC: Process failed files automatically if enabled
+        retry_attempt = 1
+        retry_files_data = []
+        
+        if auto_retry_enabled and failed_count > 0 and not (stop_event and stop_event.is_set() or is_stop_requested()):
+            log_message("", None)
+            log_message("AUTO RETRY ENABLED - Processing failed files...", "info")
+            
+            # Filter retryable failed files
+            retryable_failed_files = []
+            for file_path, status, attempt in failed_files:
+                if file_path and os.path.exists(file_path) and is_retryable(status, attempt):
+                    retryable_failed_files.append((file_path, status, attempt))
+                else:
+                    log_message(f"Skipping non-retryable: {os.path.basename(file_path)} ({status})", "info")
+            
+            retry_files = [f[0] for f in retryable_failed_files]  # Extract file paths for processing
+            
+            while retry_files and retry_attempt <= 3 and not (stop_event and stop_event.is_set() or is_stop_requested()):
+                log_message(f"", None)
+                log_message(f"RETRY ATTEMPT {retry_attempt}: {len(retry_files)} file(s) remaining", "warning")
+                
+                retry_processed = 0
+                retry_failed = 0
+                retry_stopped = 0
+                
+                with ThreadPoolExecutor(max_workers=effective_num_workers) as retry_executor:
+                    retry_futures = []
+                    
+                    for input_path in retry_files:
+                        if stop_event and stop_event.is_set() or is_stop_requested():
+                            break
+                            
+                        try:
+                            assigned_api_key = api_keys[current_api_key_index % len(api_keys)]
+                            current_api_key_index = (current_api_key_index + 1) % len(api_keys)
+                            
+                            future = retry_executor.submit(
+                                process_single_file,
+                                input_path,
+                                output_dir,
+                                [assigned_api_key],
+                                ghostscript_path,
+                                rename_enabled,
+                                auto_kategori_enabled,
+                                auto_foldering_enabled,
+                                selected_model,
+                                embedding_enabled,
+                                keyword_count,
+                                priority,
+                                stop_event
+                            )
+                            retry_futures.append((future, input_path))
+                        except Exception as e:
+                            log_message(f"Error submitting retry job: {e}", "error")
+                            retry_failed += 1
+                    
+                    # Process retry results
+                    retry_successful_files = []
+                    remaining_failed_files = []
+                    
+                    for future, input_path in retry_futures:
+                        if stop_event and stop_event.is_set() or is_stop_requested():
+                            break
+                            
+                        try:
+                            result = future.result(timeout=120)
+                            filename = os.path.basename(input_path)
+                            
+                            if not result:
+                                retry_failed += 1
+                                remaining_failed_files.append(input_path)
+                                continue
+                            
+                            status = result.get("status", "failed")
+                            
+                            if status in ["processed_exif", "processed_no_exif", "processed_exif_failed", "processed_unknown_exif_status"]:
+                                retry_processed += 1
+                                retry_successful_files.append(input_path)
+                                processed_count += 1  # Update main counter
+                                failed_count -= 1      # Reduce failed counter
+                                # Remove from failed_files list
+                                failed_files = [(fp, st, att) for fp, st, att in failed_files if fp != input_path]
+                                log_message(f"✓ RETRY SUCCESS: {filename}")
+                            elif status == "stopped":
+                                retry_stopped += 1
+                                log_message(f"⊘ RETRY STOPPED: {filename}")
+                                break
+                            else:
+                                retry_failed += 1
+                                remaining_failed_files.append(input_path)
+                                log_message(f"✗ RETRY FAILED: {filename} ({status})")
+                                
+                        except Exception as e:
+                            retry_failed += 1
+                            remaining_failed_files.append(input_path)
+                            log_message(f"✗ RETRY ERROR: {os.path.basename(input_path)} - {e}")
+                
+                # Update retry files for next iteration
+                retry_files = remaining_failed_files
+                
+                log_message(f"RETRY ATTEMPT {retry_attempt} RESULTS:")
+                log_message(f"✓ Success: {retry_processed}")
+                log_message(f"✗ Failed: {retry_failed}")
+                if retry_stopped > 0:
+                    log_message(f"⊘ Stopped: {retry_stopped}")
+                
+                # Smart delay between retry attempts
+                if retry_files and retry_attempt < 3 and not (stop_event and stop_event.is_set() or is_stop_requested()):
+                    effective_delay, delay_reason = calculate_smart_delay(api_keys, delay_seconds)
+                    log_message(f"Retry cooldown {effective_delay:.1f}s before next attempt...", "cooldown")
+                    
+                    cooldown_start = time.time()
+                    while time.time() - cooldown_start < effective_delay:
+                        if stop_event and stop_event.is_set() or is_stop_requested():
+                            break
+                        time.sleep(0.1)
+                
+                retry_attempt += 1
+                
+                # Break if no progress made
+                if retry_processed == 0 and retry_failed > 0:
+                    log_message(f"No progress made in retry attempt {retry_attempt-1}, stopping auto retry", "warning")
+                    break
+            
+            if retry_files and not (stop_event and stop_event.is_set() or is_stop_requested()):
+                log_message(f"AUTO RETRY COMPLETED: {len(retry_files)} file(s) still failed after {retry_attempt-1} attempts", "warning")
+            elif len(failed_files) == 0:  # Check failed_files list instead
+                log_message(f"AUTO RETRY SUCCESS: All files processed successfully!", "success")
+            elif not retry_files and len(failed_files) > 0:
+                log_message(f"AUTO RETRY: No retryable files found ({len(failed_files)} failed files not suitable for retry)", "warning")
+        
         try:
             for folder_type, folder_path in temp_folders.items():
                 if os.path.exists(folder_path):
@@ -635,7 +842,7 @@ def batch_process_files(input_dir, output_dir, api_keys, ghostscript_path, renam
         log_message("", None)
         log_message("============= Summary Process =============", "bold")
         log_message(f"Total file: {total_files}", None)
-        log_message(f"Successfully processed: {processed_count}", "success")
+        log_message(f"Success: {processed_count}", "success")
         log_message(f"Failed: {failed_count}", "error")
         log_message(f"Skipped: {skipped_count}", "info")
         log_message(f"Stopped: {stopped_count}", "warning")

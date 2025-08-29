@@ -25,7 +25,7 @@ from src.metadata.exif_writer import write_exif_with_exiftool
 from src.metadata.csv_exporter import write_to_platform_csvs
 from src.utils.file_utils import ensure_unique_title
 
-def process_jpg_jpeg(input_path, output_dir, selected_api_key: str, stop_event, auto_kategori_enabled=True, selected_model=None, keyword_count="49", priority="Details"):
+def process_jpg_jpeg(input_path, output_dir, selected_api_key: str, stop_event, auto_kategori_enabled=True, selected_model=None, embedding_enabled=True, keyword_count="49", priority="Details"):
     filename = os.path.basename(input_path)
     initial_output_path = os.path.join(output_dir, filename)
     temp_files_created = []
@@ -114,6 +114,11 @@ def process_jpg_jpeg(input_path, output_dir, selected_api_key: str, stop_event, 
         except Exception: pass
         return "stopped", metadata, None
     
+    # CONDITIONAL EMBEDDING: Skip EXIF embedding if disabled
+    if not embedding_enabled:
+        log_message(f"Embedding disabled - skipping EXIF metadata for {filename}")
+        return "processed_no_exif", metadata, initial_output_path
+    
     proceed, exif_status = write_exif_with_exiftool(input_path, initial_output_path, metadata, stop_event)
     
     if not proceed:
@@ -124,6 +129,7 @@ def process_jpg_jpeg(input_path, output_dir, selected_api_key: str, stop_event, 
         return f"failed_{exif_status}", metadata, None 
 
     if exif_status == "exif_ok":
+        log_message(f"Embedding enabled - EXIF metadata written for {filename}")
         return "processed_exif", metadata, initial_output_path
     elif exif_status == "exif_failed":
         log_message(f"Warning: Failed to write EXIF for {filename}, but process continued.", "warning")

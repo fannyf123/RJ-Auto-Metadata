@@ -47,7 +47,7 @@ from src.utils.system_checks import (
 from src.metadata.exif_writer import check_exiftool_exists
 from src.api.api_key_checker import check_api_keys_status
 
-APP_VERSION = "3.8.0"
+APP_VERSION = "3.9.0"
 CONFIG_FILE = "config.json"
 
 class MetadataApp(ctk.CTk):
@@ -114,7 +114,8 @@ class MetadataApp(ctk.CTk):
         self.delay_var = tk.StringVar(value="10")
         self.workers_var = tk.StringVar(value="1")
         self._actual_api_keys = []
-        self.show_api_keys_var = tk.BooleanVar(value=False)
+        # Removed show_api_keys_var - API keys now auto-hide by default
+        self.extra_settings_var = tk.BooleanVar(value=False)  # API Key Paid toggle
         self.console_visible_var = tk.BooleanVar(value=True)
 
         self.processed_count = 0
@@ -138,6 +139,7 @@ class MetadataApp(ctk.CTk):
 
         self.auto_kategori_var = tk.BooleanVar(value=False)
         self.auto_foldering_var = tk.BooleanVar(value=False)
+        self.auto_retry_var = tk.BooleanVar(value=False)
         self._needs_initial_save = False
 
         try:
@@ -149,6 +151,10 @@ class MetadataApp(ctk.CTk):
         self.model_var = tk.StringVar(value="Auto Rotation")
         self.keyword_count_var = tk.StringVar(value="49")
         self.priority_var = tk.StringVar(value="Detailed")
+        
+        # Embedding Setting
+        self.embedding_var = tk.StringVar(value="Enable")
+        self.available_embedding = ["Enable", "Disable"]
         self.available_priorities = ["Detailed", "Balanced", "Less"]
 
         self._create_ui()
@@ -264,14 +270,9 @@ class MetadataApp(ctk.CTk):
         settings_center_status_frame = ctk.CTkFrame(main_panel, fg_color="transparent")
         settings_center_status_frame.grid(row=2, column=0, padx=5, pady=5, sticky="nsew")
         settings_center_status_frame.grid_columnconfigure(0, weight=1)
-        settings_center_status_frame.grid_columnconfigure(1, weight=1)
-        settings_center_status_frame.grid_columnconfigure(2, weight=1)
 
         self._create_folder_frame(main_panel)
-        self._create_api_frame(main_panel)
-        self._create_options_frame(settings_center_status_frame)
-        self._create_center_frame(settings_center_status_frame)
-        self._create_checkbox_frame(settings_center_status_frame)
+        self._create_combined_api_settings_frame(settings_center_status_frame)
         self._create_log_frame(main_panel)
         self._create_watermark(main_panel)
 
@@ -308,66 +309,7 @@ Images from input folder will be processed with API, then copied to output folde
         ToolTip(self.input_entry, folder_tooltip_text)
         ToolTip(self.output_entry, folder_tooltip_text)
 
-    def _create_api_frame(self, parent):
-        api_frame = ctk.CTkFrame(parent, corner_radius=8)
-        api_frame.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
-        api_frame.grid_columnconfigure(0, weight=1)
-        api_frame.grid_columnconfigure(1, weight=0)
-        api_frame.grid_columnconfigure(2, weight=0)
-
-        api_header_tooltip = """
-Add one or more Gemini API keys to process images. Each line is one API key.
-
-    • You can get API key\n       from Google AI Studio
-    • Processing limit is 60 images\n       per minute per API key
-    • Automatic rotation of some API\n       keys occurs during batch processing
-    • API key paid? is for API key that\n       has been paid for
     
-The more API keys, the faster the batch process.
-        """
-        api_header_frame = ctk.CTkFrame(api_frame, fg_color="transparent")
-        api_header_frame.grid(row=0, column=0, columnspan=3, padx=10, pady=10, sticky="nsw")
-
-        api_header = self._create_header_with_help(api_header_frame, "API Keys", api_header_tooltip, font=ctk.CTkFont(size=15, weight="bold"))
-        api_header.pack(side=tk.LEFT, padx=(0, 5))
-
-        self.show_api_keys_switch = ctk.CTkSwitch(api_header_frame,text="Hide/Show", variable=self.show_api_keys_var, command=self._toggle_api_key_visibility)
-        self.show_api_keys_switch.pack(side=tk.LEFT, padx=(0, 0))
-
-        self.extra_settings_var = tk.BooleanVar(value=False)
-        self.extra_settings_checkbox = ctk.CTkCheckBox(api_header_frame, text="API key paid?", variable=self.extra_settings_var)
-        self.extra_settings_checkbox.pack(side=tk.RIGHT, padx=(10, 0))
-
-        self.api_textbox = ctk.CTkTextbox(api_frame, height=105, corner_radius=5, wrap=tk.WORD, font=self.font_normal)
-        self.api_textbox.grid(row=1, column=0, padx=(10, 5), pady=(0, 10), sticky="nsew")
-        self.api_textbox.bind("<KeyRelease>", self._sync_actual_keys_from_textbox)
-
-        api_load_save_buttons = ctk.CTkFrame(api_frame, fg_color="transparent")
-        api_load_save_buttons.grid(row=1, column=1, padx=5, pady=(12, 10), sticky="ns")
-
-        self.cek_api_button = ctk.CTkButton(api_load_save_buttons,text="Check API", width=70, command=self._cek_api_keys, fg_color="#079183")
-        self.cek_api_button.pack(pady=2, fill=tk.X)
-
-        self.load_api_button = ctk.CTkButton(api_load_save_buttons, text="Load", width=70, command=self._load_api_keys, fg_color="#079183")
-        self.load_api_button.pack(pady=2, fill=tk.X)
-
-        self.save_api_button = ctk.CTkButton(api_load_save_buttons, text="Save", width=70, command=self._save_api_keys, fg_color="#079183")
-        self.save_api_button.pack(pady=2, fill=tk.X)
-
-        self.delete_api_button = ctk.CTkButton(api_load_save_buttons, text="Delete", width=70, command=self._delete_selected_api_key, fg_color="#079183")
-        self.delete_api_button.pack(pady=2, fill=tk.X)
-
-        process_buttons_frame = ctk.CTkFrame(api_frame, fg_color="transparent")
-        process_buttons_frame.grid(row=1, column=2, padx=(5, 10), pady=(0, 10), sticky="ns")
-
-        self.start_button = ctk.CTkButton(process_buttons_frame, text="Start Processing", command=self._start_processing, font=self.font_medium, height=35, fg_color="#079183")
-        self.start_button.pack(pady=7, fill=tk.X)
-
-        self.stop_button = ctk.CTkButton(process_buttons_frame, text="Stop Processing", command=self._stop_processing, font=self.font_medium, height=35, state=tk.DISABLED, fg_color=("#bf3a3a", "#8d1f1f"))
-        self.stop_button.pack(pady=7, fill=tk.X)
-
-        self.clear_button = ctk.CTkButton(process_buttons_frame, text="Clear Log", command=self._clear_log, font=self.font_medium, height=35, fg_color="#079183")
-        self.clear_button.pack(pady=7, fill=tk.X)
 
     def _cek_api_keys(self):
         api_keys = self._actual_api_keys
@@ -390,51 +332,168 @@ The more API keys, the faster the batch process.
             self._log(f"Error checking API key: {e}", "error")
         self.cek_api_button.configure(state=tk.NORMAL)
 
-    def _create_options_frame(self, parent):
-        options_frame = ctk.CTkFrame(parent, corner_radius=8)
-        options_frame.grid(row=0, column=0, padx=(0, 3), pady=0, sticky="nsew")
-        options_frame.grid_columnconfigure(1, weight=1)
-
-        settings_header_tooltip = """
+    def _create_combined_api_settings_frame(self, parent):
+        """Combined API Keys + Settings frame with auto-hide API keys"""
+        combined_frame = ctk.CTkFrame(parent, corner_radius=6)
+        combined_frame.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
+        combined_frame.grid_columnconfigure(0, weight=1)
+        
+        # API Keys Section
+        api_section = ctk.CTkFrame(combined_frame, corner_radius=6)
+        api_section.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+        api_section.grid_columnconfigure(0, weight=1)
+        
+        api_header_tooltip = """
 Configuration of application behavior:
 
-• Keywords: Number of keywords/tags\n  taken from API results (min 8, max 49)
-• Workers: Number of parallel threads\n  for processing files (e.g. 1-10). 
-• Delay (s): Time delay (seconds)\n   between API requests. 
-• Rename Files: If active, file names\n  will be automatically changed\n  based on the 'title' metadata from API.
-• Auto Category: If active, automatically\n  categorize files according to metadata\n  from API. 
-• Auto Foldering: If active, files\n  being processed will be automatically\n  placed in folders based on their type\n  
+• Keywords: Number of keywords/tags taken from API results (min 8, max 49)
+• Workers: Number of parallel threads for processing files (e.g. 1-10)
+• Delay (s): Time delay (seconds) between API requests
+• API Key Paid?: Check if you have paid for the API key
+• Auto Retry?: Check if you want to retry failed files
+• Auto Category?: Check if you want to auto category the files
+• Auto Foldering?: Check if you want to auto folder the files
+• Rename File?: Check if you want to rename the file
+• Embedding: Check if you want to embed the metadata to the file
+• Model: Check if you want to use the model
+• Quality: Check if you want to use the quality
+• Theme: Check if you want to use the theme
 
-*NB: This setting is automatically saved\n        for the next session.
-"""
-        settings_header = self._create_header_with_help(options_frame, "Settings", settings_header_tooltip, font=ctk.CTkFont(size=15, weight="bold"))
-        settings_header.grid(row=0, column=0, columnspan=2, padx=10, pady=5, sticky="wns")
+*NB: This setting is automatically saved for the next session.
 
-        ctk.CTkLabel(options_frame, text="Keywords:", font=self.font_normal).grid(row=1, column=0, padx=10, pady=5, sticky="w")
-        self.keyword_entry = ctk.CTkEntry(options_frame, textvariable=self.keyword_count_var, width=100, justify='center', font=self.font_normal)
+        """
+        api_header = self._create_header_with_help(api_section, "Settings and API Keys", api_header_tooltip, font=ctk.CTkFont(size=15, weight="bold"))
+        api_header.grid(row=0, column=0, columnspan=4, padx=5, pady=5, sticky="w")
+        
+        # API Textbox (smaller height)
+        self.api_textbox = ctk.CTkTextbox(api_section, height=60, corner_radius=5, wrap=tk.WORD, font=self.font_normal)
+        self.api_textbox.grid(row=1, column=0, padx=7, pady=10, sticky="nsew")
+        self.api_textbox.bind("<KeyRelease>", self._sync_actual_keys_from_textbox_with_autohide)
+        self.api_textbox.bind("<FocusOut>", self._sync_actual_keys_from_textbox_with_autohide)
+        
+        # API Control Buttons
+        api_buttons1 = ctk.CTkFrame(api_section, fg_color="transparent")
+        api_buttons1.grid(row=1, column=1, padx=7, pady=10, sticky="nsew")
+        api_buttons2 = ctk.CTkFrame(api_section, fg_color="transparent")
+        api_buttons2.grid(row=1, column=2, padx=7, pady=10, sticky="nsew")
+        
+        self.cek_api_button = ctk.CTkButton(api_buttons1, text="Check", width=60, command=self._cek_api_keys, fg_color="#079183", height=35)
+        self.cek_api_button.pack(pady=5, fill=tk.BOTH)
+        
+        self.load_api_button = ctk.CTkButton(api_buttons1, text="Load", width=60, command=self._load_api_keys, fg_color="#079183", height=35)
+        self.load_api_button.pack(pady=5, fill=tk.BOTH)
+        
+        self.save_api_button = ctk.CTkButton(api_buttons2, text="Save", width=60, command=self._save_api_keys, fg_color="#079183", height=35)
+        self.save_api_button.pack(pady=5, fill=tk.BOTH)
+        
+        self.delete_api_button = ctk.CTkButton(api_buttons2, text="Delete", width=60, command=self._delete_selected_api_key, fg_color="#079183", height=35)
+        self.delete_api_button.pack(pady=5, fill=tk.BOTH)
+        
+        # API Key Paid checkbox - centered between Load/Delete buttons
+        api_paid_frame = ctk.CTkFrame(api_section, fg_color="transparent")
+        api_paid_frame.grid(row=1, column=1, columnspan=2, padx=7, pady=10, sticky="sew")
+        
+        self.api_key_paid_checkbox = ctk.CTkCheckBox(api_paid_frame, text="API Key Paid?", variable=self.extra_settings_var, font=self.font_normal)
+        self.api_key_paid_checkbox.pack(anchor="center", pady=10)
+        
+        # Process Control Buttons
+        process_buttons = ctk.CTkFrame(api_section, fg_color="transparent")
+        process_buttons.grid(row=1, column=3, padx=7, pady=10, sticky="e")
+        
+        self.start_button = ctk.CTkButton(process_buttons, text="Start Processing", command=self._start_processing, font=self.font_medium, height=35, fg_color="#079183")
+        self.start_button.pack(pady=5, fill=tk.X)
+        
+        self.stop_button = ctk.CTkButton(process_buttons, text="Stop Processing", command=self._stop_processing, font=self.font_medium, height=35, state=tk.DISABLED, fg_color=("#bf3a3a", "#8d1f1f"))
+        self.stop_button.pack(pady=5, fill=tk.BOTH)
+        
+        self.clear_button = ctk.CTkButton(process_buttons, text="Clear Log", command=self._clear_log, font=self.font_medium, height=35, fg_color="#079183")
+        self.clear_button.pack(pady=5, fill=tk.BOTH)
+        
+        # API Key Paid checkbox - moved here from options
+        
+        
+        # Settings Row
+        settings_row = ctk.CTkFrame(combined_frame, fg_color="transparent")
+        settings_row.grid(row=1, column=0, padx=10, pady=5, sticky="ew")
+        settings_row.grid_columnconfigure(0, weight=1)
+        settings_row.grid_columnconfigure(1, weight=1)
+        settings_row.grid_columnconfigure(2, weight=1)
+        
+        # Settings Column 1 - Basic Settings
+        settings_col1 = ctk.CTkFrame(settings_row, fg_color="transparent")
+        settings_col1.grid(row=0, column=0, padx=(0, 3), pady=0, sticky="nsew")
+        settings_col1.grid_columnconfigure(1, weight=1)
+        
+# #         settings_header_tooltip = """
+# # Configuration of application behavior:
+
+# # • Keywords: Number of keywords/tags taken from API results (min 8, max 49)
+# # • Workers: Number of parallel threads for processing files (e.g. 1-10)
+# # • Delay (s): Time delay (seconds) between API requests
+
+# # *NB: This setting is automatically saved for the next session.
+# # """
+#         settings_header = self._create_header_with_help(settings_col1, "Settings", settings_header_tooltip, font=ctk.CTkFont(size=15, weight="bold"))
+#         settings_header.grid(row=0, column=0, columnspan=2, padx=10, pady=5, sticky="wns")
+        
+        ctk.CTkLabel(settings_col1, text="Keywords:", font=self.font_normal).grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        self.keyword_entry = ctk.CTkEntry(settings_col1, textvariable=self.keyword_count_var, width=100, justify='center', font=self.font_normal)
         self.keyword_entry.grid(row=1, column=1, padx=5, pady=5, sticky="wns")
         
-        ctk.CTkLabel(options_frame, text="Workers:", font=self.font_normal).grid(row=2, column=0, padx=10, pady=5, sticky="w")
-        self.workers_entry = ctk.CTkEntry(options_frame, textvariable=self.workers_var, width=100, justify='center', font=self.font_normal)
+        ctk.CTkLabel(settings_col1, text="Workers:", font=self.font_normal).grid(row=2, column=0, padx=10, pady=5, sticky="w")
+        self.workers_entry = ctk.CTkEntry(settings_col1, textvariable=self.workers_var, width=100, justify='center', font=self.font_normal)
         self.workers_entry.grid(row=2, column=1, padx=5, pady=5, sticky="wns")
-
-        ctk.CTkLabel(options_frame, text="Delay (s):", font=self.font_normal).grid(row=3, column=0, padx=10, pady=5, sticky="wns")
-        self.delay_entry = ctk.CTkEntry(options_frame, textvariable=self.delay_var, width=100, justify='center', font=self.font_normal)
+        
+        ctk.CTkLabel(settings_col1, text="Delay (s):", font=self.font_normal).grid(row=3, column=0, padx=10, pady=5, sticky="wns")
+        self.delay_entry = ctk.CTkEntry(settings_col1, textvariable=self.delay_var, width=100, justify='center', font=self.font_normal)
         self.delay_entry.grid(row=3, column=1, padx=5, pady=5, sticky="wns")
+        
+        # Settings Column 2 - Model & Quality
+        settings_col2 = ctk.CTkFrame(settings_row, fg_color="transparent")
+        settings_col2.grid(row=0, column=1, padx=3, pady=0, sticky="nsew")
+        settings_col2.grid_columnconfigure(1, weight=1)
+        
+        # model_header = ctk.CTkLabel(settings_col2, text="Model & Quality", font=ctk.CTkFont(size=15, weight="bold"))
+        # model_header.grid(row=0, column=0, columnspan=2, padx=10, pady=5, sticky="wns")
+        
+        ctk.CTkLabel(settings_col2, text="Theme:", font=self.font_normal).grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        self.theme_var = tk.StringVar(value="dark")
+        self.theme_dropdown = ctk.CTkComboBox(settings_col2, values=self.available_themes, variable=self.theme_var, command=self._change_theme, width=120, justify='center')
+        self.theme_dropdown.grid(row=1, column=1, padx=5, pady=5, sticky="ns")
+        
+        ctk.CTkLabel(settings_col2, text="Models:", font=self.font_normal).grid(row=2, column=0, padx=10, pady=5, sticky="w")
+        self.model_dropdown = ctk.CTkComboBox(settings_col2, values=self.available_models, variable=self.model_var, width=120, justify='center')
+        self.model_dropdown.grid(row=2, column=1, padx=5, pady=5, sticky="ns")
+        
+        ctk.CTkLabel(settings_col2, text="Quality:", font=self.font_normal).grid(row=3, column=0, padx=10, pady=5, sticky="wns")
+        self.priority_dropdown = ctk.CTkComboBox(settings_col2, values=self.available_priorities, variable=self.priority_var, width=120, justify='center')
+        self.priority_dropdown.grid(row=3, column=1, padx=5, pady=5, sticky="ns")
+        
+        ctk.CTkLabel(settings_col2, text="Embed:", font=self.font_normal).grid(row=4, column=0, padx=10, pady=5, sticky="wns")
+        self.embedding_dropdown = ctk.CTkComboBox(settings_col2, values=self.available_embedding, variable=self.embedding_var, width=120, justify='center')
+        self.embedding_dropdown.grid(row=4, column=1, padx=5, pady=5, sticky="ns")
+        
+        # Settings Column 3 - Switches
+        settings_col3 = ctk.CTkFrame(settings_row, fg_color="transparent")
+        settings_col3.grid(row=0, column=2, padx=(3, 0), pady=0, sticky="nesw")
+        settings_col3.grid_columnconfigure(0, weight=1)
+        
+        # switches_header = ctk.CTkLabel(settings_col3, text="Options", font=ctk.CTkFont(size=15, weight="bold"))
+        # switches_header.grid(row=0, column=0, padx=10, pady=5, sticky="w")
+        
+        self.rename_switch = ctk.CTkSwitch(settings_col3, text="Rename File?", variable=self.rename_files_var, font=self.font_normal)
+        self.rename_switch.grid(row=1, column=0, padx=10, pady=(10, 5), sticky="w")
+        
+        self.auto_kategori_switch = ctk.CTkSwitch(settings_col3, text="Auto Category?", variable=self.auto_kategori_var, font=self.font_normal)
+        self.auto_kategori_switch.grid(row=2, column=0, padx=10, pady=(10, 5), sticky="w")
+        
+        self.auto_foldering_switch = ctk.CTkSwitch(settings_col3, text="Auto Foldering?", variable=self.auto_foldering_var, font=self.font_normal)
+        self.auto_foldering_switch.grid(row=3, column=0, padx=10, pady=(10, 5), sticky="w")
+        
+        self.auto_retry_switch = ctk.CTkSwitch(settings_col3, text="Auto Retry?", variable=self.auto_retry_var, font=self.font_normal)
+        self.auto_retry_switch.grid(row=4, column=0, padx=10, pady=(10, 5), sticky="w")
 
-    def _create_checkbox_frame(self, parent):
-        checkbox_frame = ctk.CTkFrame(parent, corner_radius=8)
-        checkbox_frame.grid(row=0, column=2, padx=3, pady=0, sticky="nesw")
-        checkbox_frame.grid_columnconfigure(0, weight=1)
 
-        self.rename_switch = ctk.CTkSwitch(checkbox_frame, text="Rename File?", variable=self.rename_files_var, font=self.font_normal)
-        self.rename_switch.grid(row=2, column=0, padx=10, pady=8, sticky="w")
-        self.auto_kategori_switch = ctk.CTkSwitch(checkbox_frame, text="Auto Category?", variable=self.auto_kategori_var, font=self.font_normal)
-        self.auto_kategori_switch.grid(row=3, column=0, padx=10, pady=8, sticky="w")
-        self.auto_foldering_switch = ctk.CTkSwitch(checkbox_frame, text="Auto Foldering?", variable=self.auto_foldering_var, font=self.font_normal)
-        self.auto_foldering_switch.grid(row=4, column=0, padx=10, pady=8, sticky="w")
-
-        ctk.CTkLabel(checkbox_frame, text="").grid(row=0, column=0, pady=5)
 
     def _create_log_frame(self, parent):
         log_frame = ctk.CTkFrame(parent, corner_radius=8)
@@ -619,7 +678,7 @@ Configuration of application behavior:
             keys = read_api_keys(filepath)
             if keys:
                 self._actual_api_keys = keys
-                self._update_api_textbox()
+                self._update_api_textbox_with_autohide()
                 self._log(f"Successfully loaded {len(keys)} API key", "success")
             else:
                 tk.messagebox.showwarning("Empty File",
@@ -712,7 +771,7 @@ Configuration of application behavior:
         try:
             del self._actual_api_keys[start_line_idx : end_line_idx + 1]
             self._log(f"{num_keys_to_delete} API keys deleted from internal list (line {start_line_idx+1} - {end_line_idx+1}).", "info")
-            self._update_api_textbox()
+            self._update_api_textbox_with_autohide()
         except IndexError:
             self._log("Error: Index out of range when deleting key from internal list.", "error")
             tk.messagebox.showerror("Error", "Error: Index out of range when deleting key from internal list.")
@@ -721,8 +780,70 @@ Configuration of application behavior:
             tk.messagebox.showerror("Error", f"Failed to delete API keys from list: {e}")
 
 
+    def _sync_actual_keys_from_textbox_with_autohide(self, event=None):
+        """Auto-hide API keys while maintaining actual keys in memory"""
+        try:
+            keys_text = self.api_textbox.get("1.0", "end-1c")
+            lines = keys_text.splitlines()
+            
+            new_actual_keys = []
+            has_real_keys = False
+            
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                # If line is hidden (starts with *), keep existing corresponding key
+                if line.startswith('*'):
+                    continue
+                # If line is a real API key, add it
+                if len(line) > 20:  # Reasonable API key length
+                    new_actual_keys.append(line)
+                    has_real_keys = True
+            
+            # Update actual keys if we found new ones
+            if new_actual_keys:
+                self._actual_api_keys = new_actual_keys
+                
+            # Only auto-hide if we have real keys and user was typing
+            if has_real_keys and event and hasattr(event, 'type'):
+                # Auto-hide display after typing
+                self.after(500, self._update_api_textbox_with_autohide)
+            
+        except tk.TclError:
+            pass
+        except Exception as e:
+            self._log(f"Error syncing keys: {e}", "error")
+    
+    def _update_api_textbox_with_autohide(self):
+        """Update textbox display with auto-hidden API keys"""
+        cursor_pos = self.api_textbox.index(tk.INSERT)
+        
+        try:
+            self.api_textbox.configure(state=tk.NORMAL)
+            self.api_textbox.delete("1.0", tk.END)
+            
+            if self._actual_api_keys:
+                hidden_keys = []
+                for key in self._actual_api_keys:
+                    if len(key) >= 5:
+                        hidden_key = '*' * (len(key) - 5) + key[-5:]
+                        hidden_keys.append(hidden_key)
+                    else:
+                        hidden_keys.append('.' * len(key))
+                
+                self.api_textbox.insert("1.0", "\n".join(hidden_keys))
+            
+            self.api_textbox.configure(state=tk.NORMAL)
+            self.api_textbox.mark_set(tk.INSERT, cursor_pos)
+            
+        except tk.TclError:
+            pass
+        except Exception as e:
+            self._log(f"Error updating API textbox: {e}", "error")
+    
     def _toggle_api_key_visibility(self):
-        self._update_api_textbox()
+        pass
 
 
     def _update_api_textbox(self):
@@ -762,14 +883,8 @@ Configuration of application behavior:
         return self._actual_api_keys
 
     def _sync_actual_keys_from_textbox(self, event=None):
-        if self.show_api_keys_var.get():
-            try:
-                keys_text = self.api_textbox.get("1.0", "end-1c")
-                self._actual_api_keys = [line.strip() for line in keys_text.splitlines() if line.strip()]
-            except tk.TclError:
-                 self._actual_api_keys = []
-            except Exception as e:
-                 self._log(f"Error syncing keys from textbox: {e}", "error")
+        """Redirect to new auto-hide method for backward compatibility"""
+        self._sync_actual_keys_from_textbox_with_autohide(event)
 
     def _get_config_path(self):
         try:
@@ -816,8 +931,9 @@ Configuration of application behavior:
                         self.rename_files_var.set(settings.get("rename", False))
                         self.auto_kategori_var.set(settings.get("auto_kategori", True))
                         self.auto_foldering_var.set(settings.get("auto_foldering", False))
+                        self.auto_retry_var.set(settings.get("auto_retry", False))
                         self._actual_api_keys = settings.get("api_keys", [])
-                        self.show_api_keys_var.set(settings.get("show_api_keys", False))
+                        # show_api_keys_var removed - API keys now auto-hide by default
                         self.console_visible_var.set(settings.get("console_visible", True))
                         self.extra_settings_var.set(settings.get("api_key_paid", False))
 
@@ -832,7 +948,7 @@ Configuration of application behavior:
                         else:
                               self._log("Installation ID not found in config.", "info")
 
-                        self._update_api_textbox()
+                        self._update_api_textbox_with_autohide()
                         self._log("Other settings loaded from configuration", "info")
 
                         if platform.system() == "Windows":
@@ -844,6 +960,7 @@ Configuration of application behavior:
                         self.model_var.set(settings.get("model", "Auto Rotation"))
                         self.keyword_count_var.set(str(settings.get("keyword_count", "49")))
                         self.priority_var.set(settings.get("priority", "Detailed"))
+                        self.embedding_var.set(settings.get("embedding", "Enable"))
                         self.available_models = [
                             "Auto Rotation",
                             "gemini-1.5-flash",
@@ -884,8 +1001,9 @@ Configuration of application behavior:
             "rename": self.rename_files_var.get(),
             "auto_kategori": self.auto_kategori_var.get(),
             "auto_foldering": self.auto_foldering_var.get(),
+            "auto_retry": self.auto_retry_var.get(),
             "api_keys": self._actual_api_keys,
-            "show_api_keys": self.show_api_keys_var.get(),
+            # "show_api_keys" removed - API keys now auto-hide by default
             "console_visible": self.console_visible_var.get(),
             "theme": self.theme_var.get(),
             "last_saved": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -894,6 +1012,7 @@ Configuration of application behavior:
             "model": self.model_var.get(),
             "keyword_count": self.keyword_count_var.get(),
             "priority": self.priority_var.get(),
+            "embedding": self.embedding_var.get(),
             "api_key_paid": self.extra_settings_var.get(),
         }
 
@@ -1140,10 +1259,12 @@ Configuration of application behavior:
         self.rename_switch.configure(state=tk.DISABLED)
         self.auto_kategori_switch.configure(state=tk.DISABLED)
         self.auto_foldering_switch.configure(state=tk.DISABLED)
+        self.auto_retry_switch.configure(state=tk.DISABLED)
         self.api_textbox.configure(state=tk.DISABLED)
         self.theme_dropdown.configure(state=tk.DISABLED)
         self.model_dropdown.configure(state=tk.DISABLED)
         self.priority_dropdown.configure(state=tk.DISABLED)
+        self.embedding_dropdown.configure(state=tk.DISABLED)
         self.keyword_entry.configure(state=tk.DISABLED)
         self.workers_entry.configure(state=tk.DISABLED)
         self.delay_entry.configure(state=tk.DISABLED)
@@ -1155,12 +1276,15 @@ Configuration of application behavior:
         self.delete_api_button.configure(state=tk.DISABLED)
         self.input_button.configure(state=tk.DISABLED)
         self.output_button.configure(state=tk.DISABLED)
-        self.extra_settings_checkbox.configure(state=tk.DISABLED)
+        self.api_key_paid_checkbox.configure(state=tk.DISABLED)
 
     def _run_processing(self, input_dir, output_dir, api_keys, rename_enabled, delay_seconds, num_workers, auto_kategori_enabled, auto_foldering_enabled, selected_model=None, keyword_count="49", priority="Details", bypass_api_key_limit=False):
         from src.utils.system_checks import GHOSTSCRIPT_PATH as gs_path_found
 
         try:
+            embedding_enabled = self.embedding_var.get() == "Enable"
+            auto_retry_enabled = self.auto_retry_var.get()
+            
             result = batch_process_files(
                 input_dir=input_dir,
                 output_dir=output_dir,
@@ -1172,6 +1296,8 @@ Configuration of application behavior:
                 auto_kategori_enabled=auto_kategori_enabled,
                 auto_foldering_enabled=auto_foldering_enabled,
                 selected_model=selected_model,
+                embedding_enabled=embedding_enabled,
+                auto_retry_enabled=auto_retry_enabled,
                 keyword_count=keyword_count,
                 priority=priority,
                 bypass_api_key_limit=bypass_api_key_limit
@@ -1297,10 +1423,12 @@ Configuration of application behavior:
             self.rename_switch.configure(state=tk.NORMAL)
             self.auto_kategori_switch.configure(state=tk.NORMAL)
             self.auto_foldering_switch.configure(state=tk.NORMAL)
+            self.auto_retry_switch.configure(state=tk.NORMAL)
             self.workers_entry.configure(state=tk.NORMAL)
             self.theme_dropdown.configure(state=tk.NORMAL)
             self.model_dropdown.configure(state=tk.NORMAL)
             self.priority_dropdown.configure(state=tk.NORMAL)
+            self.embedding_dropdown.configure(state=tk.NORMAL)
             self.keyword_entry.configure(state=tk.NORMAL)
             self.delay_entry.configure(state=tk.NORMAL)
             self.input_entry.configure(state=tk.NORMAL)
@@ -1311,7 +1439,7 @@ Configuration of application behavior:
             self.delete_api_button.configure(state=tk.NORMAL)
             self.input_button.configure(state=tk.NORMAL)
             self.output_button.configure(state=tk.NORMAL)
-            self.extra_settings_checkbox.configure(state=tk.NORMAL)
+            self.api_key_paid_checkbox.configure(state=tk.NORMAL)
         except Exception as e:
             print(f"Error when resetting UI: {e}")
             import traceback
@@ -1375,10 +1503,14 @@ Configuration of application behavior:
             r"^Loading other settings\.\.\.$",
             r"^Other settings loaded from configuration$",
             r"^Config file not found$",
+            r"^AUTO RETRY ENABLED - Processing failed files\.\.\.$",
+            r"^AUTO RETRY COMPLETED: \d+ file\(s\) still failed after \d+ attempts$",
+            r"^AUTO RETRY: No retryable files found \(.*\)$",
+            r"^AUTO RETRY SUCCESS: All files processed successfully!$", 
             r"^New config file created$",
             r"^============= Summary Process =============",
             r"^Total file: \d+$",
-            r"^Successfully processed: \d+$",
+            r"^Success: \d+$",
             r"^Failed: \d+$",
             r"^Skipped: \d+$",
             r"^Stopped: \d+$",

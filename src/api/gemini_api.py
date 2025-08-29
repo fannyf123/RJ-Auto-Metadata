@@ -27,84 +27,23 @@ import threading
 from collections import defaultdict
 from src.utils.logging import log_message
 
-try:
-    from google import genai
-    from google.genai import types
-    GENAI_SDK_AVAILABLE = True
-except ImportError:
-    GENAI_SDK_AVAILABLE = False
-    log_message("Google Generative AI SDK not available. Using REST API fallback.", "warning")
+# SDK DISABLED - Using pure REST API only for quota efficiency
+# try:
+#     from google import genai
+#     from google.genai import types
+#     GENAI_SDK_AVAILABLE = True
+# except ImportError:
+GENAI_SDK_AVAILABLE = False
+log_message("Google Generative AI SDK disabled - Using pure REST API for optimal quota usage.", "info")
 from src.api.gemini_prompts import (
     PROMPT_TEXT, PROMPT_TEXT_PNG, PROMPT_TEXT_VIDEO,
     PROMPT_TEXT_BALANCED, PROMPT_TEXT_PNG_BALANCED, PROMPT_TEXT_VIDEO_BALANCED,
     PROMPT_TEXT_FAST, PROMPT_TEXT_PNG_FAST, PROMPT_TEXT_VIDEO_FAST
 )
 
-_genai_client = None
-_genai_client_lock = threading.Lock()
+# SDK client functions removed - using pure REST API only
 
-def _get_genai_client(api_key):
-    global _genai_client
-    
-    if not GENAI_SDK_AVAILABLE:
-        return None
-        
-    with _genai_client_lock:
-        if _genai_client is None:
-            try:
-                _genai_client = genai.Client(api_key=api_key)
-                log_message("Google Generative AI SDK client initialized", "info")
-            except Exception as e:
-                log_message(f"Failed to initialize genai client: {e}", "error")
-                return None
-        return _genai_client
-
-def _make_genai_request(model_name, prompt_text, image_data, max_output_tokens, api_key, thinking_budget=None, stop_event=None):
-    try:
-        if stop_event and stop_event.is_set():
-            return None, "Process stopped before SDK request"
-        client = _get_genai_client(api_key)
-        if not client:
-            return None, "Failed to get genai client"
-        content_parts = [prompt_text]
-        
-        if image_data:
-            import io
-            from PIL import Image
-            
-            image_bytes = base64.b64decode(image_data)
-            image = Image.open(io.BytesIO(image_bytes))
-            content_parts.append(image)
-        
-        if stop_event and stop_event.is_set():
-            return None, "Process stopped during content preparation"
-        
-        thinking_config = None
-        if thinking_budget is not None and "gemini-2.5" in model_name:
-            thinking_config = types.ThinkingConfig(thinking_budget=thinking_budget)
-        
-        generation_config = types.GenerateContentConfig(
-            temperature=0.2,
-            max_output_tokens=max_output_tokens,
-            top_p=0.8,
-            top_k=40,
-            thinking_config=thinking_config
-        )
-        
-        if stop_event and stop_event.is_set():
-            return None, "Process stopped before API call"
-        
-        response = client.models.generate_content(
-            model=model_name,
-            contents=content_parts,
-            config=generation_config
-        )
-        
-        return response, None
-        
-    except Exception as e:
-        return None, str(e)
-
+# Reordered models: 1.5 series first (better rate limits for free keys)
 GEMINI_MODELS = [
     "gemini-1.5-flash",
     "gemini-1.5-flash-8b",
@@ -116,9 +55,7 @@ GEMINI_MODELS = [
     "gemini-2.5-pro"
 ]
 
-THINKING_BUDGET_PRO = -1
-THINKING_BUDGET_FLASH = -1
-THINKING_BUDGET_FLASH_LITE = 0
+# Thinking budget constants removed - pure REST API doesn't support thinking config
 
 DEFAULT_MODEL = "gemini-1.5-flash"
 FALLBACK_MODELS = [
@@ -131,32 +68,114 @@ MODEL_LAST_USED = defaultdict(float)
 MODEL_LOCK = threading.Lock()
 API_KEY_LAST_USED = defaultdict(float) 
 API_KEY_LOCK = threading.Lock() 
-API_KEY_MIN_INTERVAL = 2.0 
+API_KEY_MIN_INTERVAL = 3.0  # Increased from 2.0 to 3.0 for better rate limit management
 
+# Extension-like API key blacklisting for rate limits
+API_KEY_BLACKLIST = {}  # {api_key: expiry_timestamp}
+RATE_LIMIT_BLACKLIST_DURATION = 60  # 60 seconds blacklist for rate-limited keys
+SUCCESS_DELAY = 1.0  # Small delay after successful requests to avoid burst rate limits 
+
+# DEBUG: Force failure for testing Auto Retry (set to True for testing)
+DEBUG_FORCE_FAILURE = False  # ← SET TO FALSE FOR NORMAL USE
+DEBUG_FAILURE_RATE = 0.3  # 30% of files will artificially fail
 
 API_TIMEOUT = 60
-API_MAX_RETRIES = 3
+API_MAX_RETRIES = 1  # Reduced from 3 to 1 for quota efficiency
 API_RETRY_DELAY = 10
 
 FORCE_STOP_FLAG = False
+
+def blacklist_api_key(api_key, reason='rate limit'):
+    """Blacklist an API key due to rate limiting"""
+    expiry = time.time() + RATE_LIMIT_BLACKLIST_DURATION
+    API_KEY_BLACKLIST[api_key] = expiry
+    log_message(f"API key ...{api_key[-4:]} blacklisted for {RATE_LIMIT_BLACKLIST_DURATION}s due to {reason}", "warning")
+
+def calculate_smart_delay(api_keys_list: list, user_delay: float) -> tuple[float, str]:
+    """
+    Calculate optimal delay based on API key blacklist status.
+    
+    Returns:
+        tuple: (effective_delay, reason_message)
+    """
+    if not api_keys_list:
+        return user_delay, "No API keys available"
+    
+    now = time.time()
+    
+    # Check if all keys are blacklisted
+    blacklisted_keys = []
+    available_keys = []
+    earliest_expiry = float('inf')
+    
+    for key in api_keys_list:
+        blacklist_expiry = API_KEY_BLACKLIST.get(key)
+        if blacklist_expiry and now < blacklist_expiry:
+            blacklisted_keys.append(key)
+            earliest_expiry = min(earliest_expiry, blacklist_expiry)
+        else:
+            available_keys.append(key)
+    
+    # If there are available keys, use normal delay
+    if available_keys:
+        return user_delay, f"Using normal delay ({len(available_keys)}/{len(api_keys_list)} keys available)"
+    
+    # All keys are blacklisted - calculate smart delay
+    if blacklisted_keys:
+        remaining_blacklist_time = earliest_expiry - now
+        if remaining_blacklist_time > user_delay:
+            # Override user delay with blacklist time + buffer
+            smart_delay = remaining_blacklist_time + 5  # 5s buffer
+            reason = f"Smart delay override: All {len(api_keys_list)} API key(s) blacklisted. " \
+                    f"User delay {user_delay}s → {smart_delay:.1f}s to wait for blacklist expiry"
+            return smart_delay, reason
+    
+    # Fallback to user delay
+    return user_delay, "Using user delay (blacklist expired or edge case)"
 
 def select_smart_api_key(api_keys_list: list) -> str | None:
     if not api_keys_list:
         return None
 
     with API_KEY_LOCK:
-        key_statuses = []
+        now = time.time()
+        
+        # Filter out blacklisted keys (rate-limited recently)
+        available_keys = []
         for key in api_keys_list:
+            blacklist_expiry = API_KEY_BLACKLIST.get(key)
+            if blacklist_expiry and now < blacklist_expiry:
+                log_message(f"API key ...{key[-4:]} still blacklisted for {int(blacklist_expiry - now)}s", "debug")
+                continue
+            # Remove expired blacklist entries
+            elif blacklist_expiry and now >= blacklist_expiry:
+                del API_KEY_BLACKLIST[key]
+                log_message(f"API key ...{key[-4:]} removed from blacklist", "info")
+            available_keys.append(key)
+        
+        if not available_keys:
+            log_message("All API keys are blacklisted! Using least recently blacklisted key.", "warning")
+            # If all keys are blacklisted, use the one that expires soonest
+            earliest_expiry = float('inf')
+            least_recent_key = None
+            for key in api_keys_list:
+                expiry = API_KEY_BLACKLIST.get(key, 0)
+                if expiry < earliest_expiry:
+                    earliest_expiry = expiry
+                    least_recent_key = key
+            return least_recent_key
+        
+        # Select oldest used key from available keys
+        key_statuses = []
+        for key in available_keys:
             last_used_time = API_KEY_LAST_USED.get(key, 0)
             key_statuses.append((last_used_time, key))
 
         key_statuses.sort(key=lambda x: x[0])
-
-        if not key_statuses:
-            return None
-            
         selected_key = key_statuses[0][1]
-        API_KEY_LAST_USED[selected_key] = time.time() 
+        API_KEY_LAST_USED[selected_key] = now
+        
+        log_message(f"Selected API key ...{selected_key[-4:]} ({len(available_keys)}/{len(api_keys_list)} keys available)", "debug")
         return selected_key
 
 def select_best_fallback_model(fallback_models_list: list, excluded_model_name: str | None = None) -> str | None:
@@ -306,7 +325,8 @@ def _attempt_gemini_request(
     elif selected_prompt_text == PROMPT_TEXT_PNG_FAST: prompt_name = "PROMPT_TEXT_PNG_FAST (Less)"
     elif selected_prompt_text == PROMPT_TEXT_VIDEO_FAST: prompt_name = "PROMPT_TEXT_VIDEO_FAST (Less)"
     
-    parts = [{"text": selected_prompt_text}]
+    # CRITICAL FIX: Use same parts order as extension (IMAGE FIRST, TEXT SECOND)
+    parts = []  # Start with empty parts array
     
     for img_path in image_paths:
         try:
@@ -315,112 +335,60 @@ def _attempt_gemini_request(
             with open(img_path, "rb") as image_file:
                 image_data = base64.b64encode(image_file.read()).decode("utf-8")
             
-            _, ext = os.path.splitext(img_path)
-            mime_type = f"image/{ext.lower().replace('.', '')}"
-            if mime_type == "image/jpg": mime_type = "image/jpeg"
-            if mime_type not in ["image/png", "image/jpeg", "image/webp", "image/heic", "image/heif"]:
-                mime_type = "image/jpeg"
+            # Use hardcoded mime_type like extension for consistency and reduced processing
+            mime_type = "image/jpeg"  # Extension uses hardcoded jpeg for all images
             
+            # Add image FIRST (like extension)
             parts.append({"inline_data": {"mime_type": mime_type, "data": image_data}})
             
         except Exception as e:
             log_message(f"Error reading image file ({os.path.basename(img_path)}): {e}", "error")
             return -3, None, "file_read", str(e)
+    
+    # Add text prompt AFTER images (like extension: IMAGE FIRST, TEXT SECOND)
+    parts.append({"text": selected_prompt_text})
 
     max_output_tokens = 800
     # Cap output tokens to reduce cost/limits for metadata tasks
     if "gemini-2.5-pro" in model_to_use:
-        max_output_tokens = 7000
+        max_output_tokens = 10000
     elif "gemini-2.5-flash" in model_to_use and "lite" not in model_to_use:
-        max_output_tokens = 7000
+        max_output_tokens = 10000
     elif "gemini-2.5-flash-lite-preview-06-17" in model_to_use:
-        max_output_tokens = 800
+        max_output_tokens = 2000
     
+    # Use structured output like extension for token efficiency
     payload = {
         "contents": [{"role": "user", "parts": parts}],
-        "safetySettings": [
-            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"}
-        ],
-        "generationConfig": {"temperature": 0.2, "maxOutputTokens": max_output_tokens, "topP": 0.8, "topK": 40}
+        "generationConfig": {
+            "temperature": 0.2, 
+            "maxOutputTokens": max_output_tokens,
+            "topP": 0.8, 
+            "topK": 40,
+            "response_mime_type": "application/json",
+            "response_schema": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "maxLength": 180},
+                    "description": {"type": "string", "maxLength": 500},
+                    "keywords": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "maxItems": 60
+                    },
+                    "adobe_stock_category": {"type": "string"},
+                    "shutterstock_category": {"type": "string"}
+                },
+                "required": ["title", "description", "keywords", "adobe_stock_category", "shutterstock_category"]
+            }
+        }
     }
     
-    if GENAI_SDK_AVAILABLE:
-        thinking_budget = None
-        if "gemini-2.5" in model_to_use:
-            if "flash-lite-preview-06-17" in model_to_use:
-                thinking_budget = THINKING_BUDGET_FLASH_LITE
-                log_message(f"Thinking disabled for {model_to_use}", "info")
-            elif "pro" in model_to_use:
-                thinking_budget = THINKING_BUDGET_PRO
-                log_message(f"Thinking configured for {model_to_use}", "info")
-            elif "flash" in model_to_use:
-                thinking_budget = THINKING_BUDGET_FLASH
-                log_message(f"Thinking configured for {model_to_use}", "info")
-        
-        image_data = None
-        prompt_text = parts[0]["text"]
-        if len(parts) > 1 and "inline_data" in parts[1]:
-            image_data = parts[1]["inline_data"]["data"]
-        
-        sdk_response_event = threading.Event()
-        sdk_response_container = {'response': None, 'error': None}
-        
-        def perform_sdk_request_in_thread():
-            try:
-                resp, err = _make_genai_request(
-                    model_to_use, prompt_text, image_data, max_output_tokens, current_api_key, thinking_budget, stop_event
-                )
-                sdk_response_container['response'] = resp
-                sdk_response_container['error'] = err
-            except Exception as e_req:
-                sdk_response_container['error'] = str(e_req)
-            finally:
-                sdk_response_event.set()
-        
-        sdk_thread = threading.Thread(target=perform_sdk_request_in_thread)
-        sdk_thread.daemon = True
-        sdk_thread.start()
-        
-        sdk_timeout = 0
-        while not sdk_response_event.is_set() and sdk_timeout < API_TIMEOUT:
-            if check_stop_event(stop_event, f"SDK request cancelled while waiting for response: {image_basename}"):
-                return -2, None, "stopped", "Process stopped while waiting for SDK response"
-            sdk_response_event.wait(0.1)
-            sdk_timeout += 0.1
-        
-        if not sdk_response_event.is_set():
-            log_message(f"SDK request timed out for {image_basename}, falling back to REST API", "warning")
-            log_message(f"Falling back to REST API for {model_to_use}", "info")
-        else:
-            response = sdk_response_container['response']
-            error = sdk_response_container['error']
-            
-            if error:
-                log_message(f"Error with genai SDK for {image_basename}: {error}", "error")
-                log_message(f"Falling back to REST API for {model_to_use}", "info")
-            else:
-                if response and response.text:
-                    mock_response_data = {
-                        "candidates": [{
-                            "content": {
-                                "parts": [{"text": response.text}],
-                                "role": "model"
-                            },
-                            "finishReason": "STOP",
-                            "index": 0
-                        }]
-                    }
-                    return 200, mock_response_data, None, None
-                else:
-                    log_message(f"Empty response from genai SDK for {image_basename}", "error")
-                    log_message(f"Falling back to REST API for {model_to_use}", "info")
+    # SDK DISABLED - Using pure REST API only for optimal quota usage
+    # log_message(f"Using REST API for {model_to_use}", "info")
     
-    log_message(f"Using REST API fallback for {model_to_use}", "info")
-    
-    headers = {"Content-Type": "application/json", "User-Agent": "MetadataProcessor/1.0"}
+    # Use minimal headers like extension (no User-Agent to avoid rate limit triggers)
+    headers = {"Content-Type": "application/json"}
     api_url = f"{api_endpoint}?key={current_api_key}"
 
     if check_stop_event(stop_event, f"API request dibatalkan sebelum POST: {image_basename}"):
@@ -473,6 +441,13 @@ def _attempt_gemini_request(
 
     if http_status_code == 200:
         if "candidates" in response_data and response_data["candidates"]:
+            # Enhanced debug for thinking models
+            if "2.5" in model_to_use:
+                candidate = response_data["candidates"][0]
+                parts = candidate.get("content", {}).get("parts", [])
+                log_message(f"Thinking model {model_to_use} - parts count: {len(parts)}, keys: {list(candidate.keys())}", "debug")
+                if not parts:
+                    log_message(f"Full response structure: {response_data}", "debug")
             return 200, response_data, None, None 
         elif "promptFeedback" in response_data and response_data.get("promptFeedback", {}).get("blockReason"):
             feedback = response_data["promptFeedback"]
@@ -491,12 +466,56 @@ def _attempt_gemini_request(
         return http_status_code, response_data, "api_error", api_error_message
 
 def _extract_metadata_from_text(generated_text: str, keyword_count: str) -> dict | None:
+    """Extract metadata from Gemini response - handles both JSON structured output and legacy text format"""
     title = ""
     description = ""
     tags = []
     as_category = ""
     ss_category = ""
+    
     try:
+        # Try parsing as JSON first (structured output)
+        try:
+            json_data = json.loads(generated_text.strip())
+            if isinstance(json_data, dict):
+                title = json_data.get("title", "")
+                description = json_data.get("description", "")
+                
+                # Handle keywords - could be array or comma-separated string
+                keywords = json_data.get("keywords", [])
+                if isinstance(keywords, list):
+                    tags = [str(kw).strip() for kw in keywords if str(kw).strip()]
+                elif isinstance(keywords, str):
+                    tags = [kw.strip() for kw in keywords.split(",") if kw.strip()]
+                
+                # Remove duplicates while preserving order
+                tags = list(dict.fromkeys(tags))
+                
+                # Apply keyword limit
+                try:
+                    max_kw = int(keyword_count)
+                    if max_kw < 1: max_kw = 49
+                except Exception:
+                    max_kw = 49
+                tags = tags[:max_kw]
+                
+                as_category = json_data.get("adobe_stock_category", "")
+                ss_category = json_data.get("shutterstock_category", "")
+                
+                # log_message(f"Successfully parsed structured JSON output with {len(tags)} keywords", "debug")
+                return {
+                    "title": title,
+                    "description": description,
+                    "tags": tags,
+                    "as_category": as_category,
+                    "ss_category": ss_category
+                }
+        except (json.JSONDecodeError, TypeError) as json_error:
+            # Fall back to regex parsing for legacy format
+            # log_message(f"JSON parsing failed ({json_error}), falling back to regex parsing", "debug")
+            pass
+        
+        # Legacy regex parsing for backward compatibility
         title_match = re.search(r"^Title:\s*(.*)", generated_text, re.MULTILINE | re.IGNORECASE)
         if title_match: title = title_match.group(1).strip()
         desc_match = re.search(r"^Description:\s*(.*)", generated_text, re.MULTILINE | re.IGNORECASE)
@@ -519,9 +538,12 @@ def _extract_metadata_from_text(generated_text: str, keyword_count: str) -> dict
         ss_cat_match = re.search(r"ShutterstockCategory:\s*([^\n]*)", generated_text)
         if ss_cat_match:
             ss_category = ss_cat_match.group(1).strip()
+            
+        log_message(f"Successfully parsed legacy text format with {len(tags)} keywords", "debug")
     except Exception as e:
         log_message(f"[ERROR] Failed to parse metadata from Gemini: {e}")
         return None
+        
     return {
         "title": title,
         "description": description,
@@ -535,10 +557,17 @@ def get_gemini_metadata(image_path, api_key, stop_event, use_png_prompt=False, u
     
     if is_multi_image:
         image_basename = f"{os.path.basename(image_path[0])} (+{len(image_path)-1} other frames)"
-        log_message(f"Starting get_gemini_metadata for {len(image_path)} video frames with quality: {priority}, model input: {selected_model_input}")
+        log_message(f"Starting process{len(image_path)} video frames with quality: {priority}, model input: {selected_model_input}")
     else:
         image_basename = os.path.basename(image_path)
-        log_message(f"Starting get_gemini_metadata for {image_basename} with quality: {priority}, model input: {selected_model_input}")
+        log_message(f"Starting process {image_basename} with quality: {priority}, model input: {selected_model_input}")
+    
+    # DEBUG: Artificial failure for testing Auto Retry
+    if DEBUG_FORCE_FAILURE:
+        import random
+        if random.random() < DEBUG_FAILURE_RATE:
+            log_message(f"🧪 DEBUG: Artificial failure triggered for {image_basename} (testing Auto Retry)", "warning")
+            return {"error": "debug_artificial_failure", "message": "Simulated failure for Auto Retry testing"}
     
     allowed_api_ext = ('.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif')
     
@@ -573,7 +602,7 @@ def get_gemini_metadata(image_path, api_key, stop_event, use_png_prompt=False, u
             model_to_use = DEFAULT_MODEL
         else:
             model_to_use = selected_model_input
-            log_message(f"Using fixed model: {model_to_use} (user selected)", "info")
+            # log_message(f"Using fixed model: {model_to_use} (user selected)", "info")
     
     while current_retries < API_MAX_RETRIES:
         if check_stop_event(stop_event, f"get_gemini_metadata loop retry ({current_retries + 1}) cancelled: {image_basename}"):
@@ -582,11 +611,11 @@ def get_gemini_metadata(image_path, api_key, stop_event, use_png_prompt=False, u
         model_for_this_attempt = model_to_use
         if is_auto_rotate_mode:
             model_for_this_attempt = select_next_model() 
-            log_message(f"Auto Rotation: Model selected {model_for_this_attempt} for attempt {current_retries + 1}", "info")
+            # log_message(f"Auto Rotation: Model selected {model_for_this_attempt} for attempt {current_retries + 1}", "info")
         
         last_attempted_model = model_for_this_attempt
 
-        log_message(f"Attempt {current_retries + 1}/{API_MAX_RETRIES} using model: {model_for_this_attempt}", "info")
+        # log_message(f"Attempt {current_retries + 1}/{API_MAX_RETRIES} using model: {model_for_this_attempt}", "info")
         
         http_status, response_data, error_type, error_detail = _attempt_gemini_request(
             image_path, api_key, model_for_this_attempt, stop_event,
@@ -622,6 +651,17 @@ def get_gemini_metadata(image_path, api_key, stop_event, use_png_prompt=False, u
                                 generated_text = part.get("text", "")
                                 break
                     
+                    # Thinking models fallback: try direct text extraction
+                    if not generated_text and "2.5" in model_for_this_attempt:
+                        try:
+                            # Alternative path for thinking models
+                            alt_text = str(candidate.get("content", {}))
+                            if "Title:" in alt_text or "Keywords:" in alt_text:
+                                generated_text = alt_text
+                                log_message(f"Thinking model fallback extraction succeeded for {model_for_this_attempt}", "info")
+                        except Exception as e:
+                            log_message(f"Thinking model fallback failed: {e}", "debug")
+                    
                     if not generated_text:
                         log_message(f"Debug: Response parts structure from {model_for_this_attempt}: {[list(part.keys()) for part in parts]}", "debug")
                     else:
@@ -633,11 +673,16 @@ def get_gemini_metadata(image_path, api_key, stop_event, use_png_prompt=False, u
                     
                     if extracted_metadata:
                         log_message(f"Metadata successfully extracted from {model_for_this_attempt} for {image_basename}", "success")
+                        # Small delay after success to avoid burst rate limits
+                        time.sleep(SUCCESS_DELAY)
                         return extracted_metadata
                     else:
                         log_message(f"Failed to extract metadata structure (via helper) from Gemini text ({model_for_this_attempt}, {image_basename}).", "warning")
                         error_type = "extraction_failed"
                 else:
+                    # Enhanced debug for thinking models (2.5 series)
+                    if "2.5" in model_for_this_attempt:
+                        log_message(f"Thinking model {model_for_this_attempt} response structure: {[list(part.keys()) for part in parts] if parts else 'No parts found'}", "debug")
                     log_message(f"Gemini response structure is invalid (no 'parts'/'text') from {model_for_this_attempt} ({image_basename}).", "warning")
                     error_type = "invalid_response_structure"
             else:
@@ -652,6 +697,8 @@ def get_gemini_metadata(image_path, api_key, stop_event, use_png_prompt=False, u
             return {"error": f"Content blocked by {model_for_this_attempt}: {error_detail}"}
         elif http_status == 429 or (error_type == "api_error" and response_data and response_data.get("error", {}).get("code") == 429):
             log_message(f"Rate limit (429) received for model {model_for_this_attempt} / API key ...{api_key[-4:]} on {image_basename}.", "warning")
+            # Blacklist this API key immediately on 429
+            blacklist_api_key(api_key, f'rate limit 429 - {model_for_this_attempt}')
             if not is_auto_rotate_mode:
                 log_message(f"Warning: The model you selected ({model_for_this_attempt}) is reaching the quota limit. Try using a different model or Auto Rotation mode.", "warning")
         elif http_status in [400, 401, 403] or (error_type == "api_error" and response_data and response_data.get("error",{}).get("code",0) in [400,401,403]):
@@ -673,7 +720,7 @@ def get_gemini_metadata(image_path, api_key, stop_event, use_png_prompt=False, u
                 time.sleep(0.1)
 
     if is_auto_rotate_mode and last_attempted_model and http_status == 429:
-        log_message(f"Last model '{last_attempted_model}' failed due to rate limit after all retries. No fallback attempt because Auto Rotation is already in use.", "warning")
+        log_message(f"Last model '{last_attempted_model}' failed due to rate limit after all retries. {error_type}", "warning")
     
     log_message(f"All attempts ({current_retries}) failed for {image_basename}. Last model tried: {last_attempted_model}", "error")
     return {"error": f"Maximum retries exceeded for {image_basename}. Last model: {last_attempted_model}"}

@@ -25,7 +25,7 @@ from src.utils.compression import compress_image
 
 def convert_eps_to_jpg(eps_path, output_jpg_path, ghostscript_path, stop_event=None):
     filename = os.path.basename(eps_path)
-    log_message(f"Starting conversion of EPS/AI to JPG: {filename}")
+    # log_message(f"Starting conversion of EPS/AI to JPG: {filename}")
 
     if not ghostscript_path:
         error_message = "Error: Ghostscript executable path not found during application startup check."

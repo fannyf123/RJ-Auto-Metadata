@@ -17,10 +17,12 @@ RJ Auto Metadata is a powerful desktop application built with Python and CustomT
     *   Utilizes the Google Gemini API for content analysis and metadata suggestion.
     *   Extracts meaningful titles, detailed descriptions, and relevant keywords based on visual or content analysis.
     *   Handles API communication, including request formatting and response parsing (`src/api/gemini_api.py`).
-*   **Efficient Batch Processing (Enhanced v3.8.0):**
+*   **Efficient Batch Processing:**
     *   Processes entire folders of files automatically.
     *   Uses a configurable number of parallel worker threads (`concurrent.futures.ThreadPoolExecutor`) for faster throughput (`src/processing/batch_processing.py`).
     *   **Thread-Safe Operations:** Supports high-concurrency processing (100+ workers, 1000+ files) with race condition prevention.
+    *   **Auto Retry System:** Intelligent failure recovery that automatically retries failed files with configurable attempts per failure type (API errors: 5 attempts, file operations: 3 attempts). Includes real-time counter updates and smart retry timing.
+    *   **Smart Delay Override:** Prevents rate limit loops by automatically adjusting batch delays when all API keys are blacklisted (e.g., user delay 10s → 65s override) with multi-scenario support for single/multiple keys.
     *   Smart API Key Selection. Intelligently selects the "most ready" API key for each request based on its current token bucket wait time and last usage, optimizing throughput and reducing immediate rate limit errors, rather than simple rotation. (`src/api/gemini_api.py`)
     *   Adaptive Inter-Batch Cooldown. Automatically adjusts the delay between processing batches. If a high percentage of API calls failed in the previous batch, the delay is temporarily increased (e.g., to 60 seconds) to allow API RPM to recover. Otherwise, the user-defined delay is used. (`src/processing/batch_processing.py`)
     *   Fallback Model Mechanism. If an API call fails due to rate limits (429) after all main retries with the selected model, the application attempts one final call using the "most ready" model from a predefined fallback list, increasing the chances of successful metadata generation. This does not apply if "Auto Rotasi" is active for model selection. (`src/api/gemini_api.py`)
@@ -52,6 +54,8 @@ RJ Auto Metadata is a powerful desktop application built with Python and CustomT
         *   `Rename File?`: Automatically renames output files using the generated title.
         *   `Auto Category?`: (Experimental) Attempts to assign categories based on API results (`src/metadata/categories/`).
         *   `Auto Foldering?`: Automatically organizes output files into subdirectories (`Images`, `Vectors`, `Videos`) based on their type.
+        *   `Auto Retry?`: Enables intelligent failure recovery that automatically retries failed files with smart retry logic.
+        *   `Embedding`: Controls metadata embedding into files (`Enable`/`Disable`). When disabled, skips EXIF/XMP writing while still generating CSV exports.
     *   **Appearance:** Choose between `Light`, `Dark`, or `System` themes, powered by CustomTkinter.
 *   **Intuitive User Interface (`src/ui/app.py`):**
     *   Built with CustomTkinter for a modern look and feel.
@@ -205,6 +209,8 @@ Stores settings automatically (usually in `Documents/RJAutoMetadata` on Windows)
 *   **Rename File?:** Renames output file to `Generated Title.ext`.
 *   **Auto Category?:** Applies experimental categories.
 *   **Auto Foldering?:** Sorts output into `Images/`, `Vectors/`, `Videos/`.
+*   **Auto Retry?:** Enables automatic retry of failed files with intelligent failure recovery.
+*   **Embedding:** Controls metadata embedding (`Enable`/`Disable`). Skips EXIF writing when disabled.
 
 ### 6.3. Analytics
 

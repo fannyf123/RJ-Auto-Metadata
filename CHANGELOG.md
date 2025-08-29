@@ -16,6 +16,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 -
 
+## [3.9.0] - 2025-08-21
+
+### Added
+- **Auto Retry System:** Intelligent failure recovery mechanism that automatically retries failed file processing
+  - Smart retry logic with configurable attempts per failure type (API errors: 5 attempts, file operations: 3 attempts)
+  - Retryable vs Non-retryable status classification (permanent failures like unsupported formats are skipped)
+  - Real-time counter updates during retry operations with comprehensive progress tracking
+  - Integration with Smart Delay Override for optimal retry timing
+- **Smart Delay Override System:** Intelligent batch delay management that prevents rate limit loops
+  - Automatic delay calculation based on API key blacklist status
+  - Auto-override user-defined delays when all API keys are blacklisted (e.g., 10s → 65s)
+  - Multi-scenario support for single and multiple API key configurations
+  - Dynamic blacklist expiry time calculation with safety buffers
+- **Metadata Embedding Control:** User-configurable metadata embedding functionality
+  - "Embedding" dropdown with Enable/Disable options in the UI
+  - Conditional EXIF/XMP metadata writing based on user preference
+  - Process flow: Request API → Get Metadata → [Optional: Embed EXIF] → Export CSV → Next File
+  - Format-specific embedding support (JPEG: full support, PNG: not supported, Videos: conditional)
+- **Enhanced API Key Management:** Improved API key security and user experience
+  - Auto-hide API keys displaying only last 5 digits (e.g., `*******************************a564a`)
+  - Smart auto-hide triggering only during user input for better security
+  - Removal of manual hide/show toggle for streamlined interface
+
+### Changed
+- **Rate Limiting Architecture Overhaul:** Complete resolution of desktop app rate limit issues
+  - **CRITICAL FIX:** Disabled Google Generative AI SDK completely in favor of pure REST API for quota efficiency
+  - **Parts Order Correction:** Fixed API request structure from `[TEXT, IMAGE]` to `[IMAGE, TEXT]` 
+  - **Structured Output Implementation:** Added `response_mime_type: "application/json"` and `response_schema` for consistent JSON responses
+  - **Token Optimization:** Massive prompt reduction achieving 81% token efficiency 
+  - **Request Optimization:** Removed `safetySettings` payload, hardcoded MIME type, minimal headers approach
+- **API Key Blacklisting System:** Implemented intelligent rate limit management
+  - 60-second blacklist duration for rate-limited keys with automatic expiry tracking
+  - Smart API key selection prioritizing available (non-blacklisted) keys
+  - Reduced `API_MAX_RETRIES` from 3 to 1 to prevent burst requests
+  - Added `SUCCESS_DELAY = 1.0s` after successful requests to avoid burst rate limits
+- **UI Layout Modernization:** Consolidated and streamlined interface design
+  - Combined "API Keys frame" and "Settings row" into single integrated frame
+  - Reduced API textbox height from 105px to 60px for more compact layout
+  - Repositioned "API Key Paid?" checkbox to centered position below Load/Delete buttons
+  - Updated header from "API Keys" to "Settings and API Keys" for better context
+
+### Fixed
+- **Desktop Rate Limiting Crisis:** Resolved critical issue where desktop app immediately hit rate limits with fresh API keys while browser extensions worked normally for 50+ cycles
+  - Root cause: Multiple inefficiencies including SDK overhead, incorrect request structure, verbose prompts, and aggressive retry patterns
+  - Solution: Complete alignment with proven browser extension approach including REST API usage, correct parts order, and optimized prompts
+- **Auto Retry Logic Errors:** Fixed failed file tracking and retry execution issues
+  - Corrected failed files collection from processed files set to actual failure tracking
+  - Implemented proper retryable status filtering with attempt count validation
+  - Fixed success message logic showing false positives when no retries occurred
+  - Enhanced failed file tracking with tuple structure: `(input_path, status, attempt_count)`
+- **UI AttributeError Issues:** Resolved critical initialization errors in refactored interface
+  - Fixed missing `extra_settings_var` variable causing startup crashes
+  - Corrected deprecated `show_api_keys_var` references in method redirections
+  - Ensured backward compatibility for existing method calls
+- **API Communication Inconsistencies:** Standardized request/response handling across all processing types
+  - Unified metadata extraction with JSON-first parsing and regex fallback
+  - Consistent error handling for API response validation
+  - Improved debug logging for thinking models (Gemini 2.5 series)
+
+### Technical Improvements
+- **Comprehensive Token Management:** Optimized all 9 prompt variants for maximum efficiency
+- **Enhanced Error Classification:** Added debug artificial failure status for testing Auto Retry functionality
+- **Thread-Safe UI Operations:** Proper enable/disable state management for new controls during processing
+- **Intelligent Progress Tracking:** Enhanced batch processing with real-time success/failure counter adjustments
+- **Configuration Persistence:** All new features (Auto Retry, Embedding control) properly saved/loaded from config.json
+
+
 ## [3.8.0] - 2025-08-08
 
 ### Added

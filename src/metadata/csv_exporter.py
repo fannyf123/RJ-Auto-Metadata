@@ -464,35 +464,35 @@ def write_to_platform_csvs_safe(csv_dir, filename, title, description, keywords,
             failed_platforms.append("Miri Canvas")
         
         backup_dir = os.path.join(csv_dir, "backup")
-        try:
-            backup_success_count, backup_failed = write_platform_specific_txt_backups_safe(
-                backup_dir, safe_filename, safe_title, safe_description, keywords, 
-                as_keywords, ss_keywords, as_category, ss_category, is_vector
-            )
+        # try:
+        #     backup_success_count, backup_failed = write_platform_specific_txt_backups_safe(
+        #         backup_dir, safe_filename, safe_title, safe_description, keywords, 
+        #         as_keywords, ss_keywords, as_category, ss_category, is_vector
+        #     )
             
-            if backup_success_count >= 3:
-                log_message(f"TXT Backup: {backup_success_count}/6 platform backups successful")
-            else:
-                log_message(f"TXT Backup: WARNING - Only {backup_success_count}/6 backups successful", "warning")
+        #     if backup_success_count >= 3:
+        #         log_message(f"TXT Backup: {backup_success_count}/6 platform backups successful")
+        #     else:
+        #         log_message(f"TXT Backup: WARNING - Only {backup_success_count}/6 backups successful", "warning")
                 
-            if backup_failed:
-                log_message(f"TXT Backup failures: {', '.join(backup_failed)}", "warning")
+        #     if backup_failed:
+        #         log_message(f"TXT Backup failures: {', '.join(backup_failed)}", "warning")
                 
-        except Exception as e:
-            log_message(f"TXT Backup: ERROR - {e}", "error")
+        # except Exception as e:
+        #     log_message(f"TXT Backup: ERROR - {e}", "error")
         
         total_platforms = 6
         success_threshold = 4
         
-        if success_count >= success_threshold:
-            if failed_platforms:
-                log_message(f"CSV Export: {success_count}/{total_platforms} successful. Failed: {', '.join(failed_platforms)}", "warning")
-            else:
-                log_message(f"CSV Export: Success for all {total_platforms} platforms")
-            return True, failed_platforms
-        else:
-            log_message(f"CSV Export: CRITICAL - Only {success_count}/{total_platforms} successful. Threshold: {success_threshold}", "error")
-            return False, failed_platforms
+        # if success_count >= success_threshold:
+        #     if failed_platforms:
+        #         log_message(f"CSV Export: {success_count}/{total_platforms} successful. Failed: {', '.join(failed_platforms)}", "warning")
+        #     else:
+        #         log_message(f"CSV Export: Success for all {total_platforms} platforms")
+        #     return True, failed_platforms
+        # else:
+        #     log_message(f"CSV Export: CRITICAL - Only {success_count}/{total_platforms} successful. Threshold: {success_threshold}", "error")
+        #     return False, failed_platforms
             
     except Exception as e:
         log_message(f"CRITICAL ERROR CSV: {e}", "error")
@@ -516,7 +516,7 @@ def write_to_platform_csvs(csv_dir, filename, title, description, keywords, auto
         return success
         
     except Exception as e:
-        log_message(f"Wrapper Error: {e}", "error")
+        # log_message(f"Wrapper Error: {e}", "error")
         return False
 
 def write_txt_backup(backup_dir, platform_name, header, data_rows):

@@ -23,7 +23,7 @@ from src.utils.compression import compress_image, get_temp_compression_folder
 from src.api.gemini_api import get_gemini_metadata
 from src.metadata.csv_exporter import write_to_platform_csvs
 
-def process_png(input_path, output_dir, selected_api_key: str, stop_event, auto_kategori_enabled=True, selected_model=None, keyword_count="49", priority="Details"):
+def process_png(input_path, output_dir, selected_api_key: str, stop_event, auto_kategori_enabled=True, selected_model=None, embedding_enabled=True, keyword_count="49", priority="Details"):
     filename = os.path.basename(input_path)
     initial_output_path = os.path.join(output_dir, filename)
     temp_files_created = []
@@ -103,5 +103,11 @@ def process_png(input_path, output_dir, selected_api_key: str, stop_event, auto_
         try: os.remove(initial_output_path)
         except Exception: pass
         return "stopped", metadata, None
+    
+    # PNG format does not support EXIF embedding reliably
+    if not embedding_enabled:
+        log_message(f"Embedding disabled - PNG format does not support EXIF: {filename}")
+    else:
+        log_message(f"PNG format does not support EXIF embedding: {filename}")
     
     return "processed_no_exif", metadata, initial_output_path

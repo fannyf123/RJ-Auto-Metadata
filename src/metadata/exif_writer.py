@@ -351,13 +351,13 @@ def write_exif_with_exiftool(image_path, output_path, metadata, stop_event):
             return False, "stopped"
 
         clearing_fields = [arg for arg in clear_command if '=' in arg and arg.endswith('=')]
-        log_message(f"Clearing {len(clearing_fields)} metadata fields for {strategy} strategy", "debug")
+        # log_message(f"Clearing {len(clearing_fields)} metadata fields for {strategy} strategy", "debug")
         
         result = subprocess.run(clear_command, check=False, capture_output=True, text=True,
                                 encoding='utf-8', errors='replace', timeout=30,
                                 creationflags=subprocess.CREATE_NO_WINDOW)
         if result.returncode == 0:
-            log_message(f"Old metadata successfully cleared from {os.path.basename(output_path)} ({len(clearing_fields)} fields)")
+            log_message(f"Old metadata successfully cleared from {os.path.basename(output_path)}")
         else:
              log_message(f"Warning: Failed to clean old metadata (Code: {result.returncode}). Error: {result.stderr.strip()}", "warning")
 
@@ -465,7 +465,7 @@ def write_exif_with_exiftool(image_path, output_path, metadata, stop_event):
                 log_message(f"XMP-only: Added {len(cleaned_tags)} keywords after clean reset", "debug")
 
     elif strategy == 'eps_simple':
-        log_message("Using EPS simple strategy (based on original working approach)")
+        # log_message("Using EPS simple strategy (based on original working approach)")
         command.extend([
             "-Title=", "-ObjectName=", "-Keywords=", "-Subject=",
             "-XPComment=", "-UserComment=", "-ImageDescription=",
@@ -486,7 +486,7 @@ def write_exif_with_exiftool(image_path, output_path, metadata, stop_event):
             for tag in cleaned_tags:
                 command.append(f"-Keywords+={tag}")
                 command.append(f"-Subject+={tag}")
-            log_message(f"EPS simple: Added {len(cleaned_tags)} keywords after clean reset", "debug")
+            # log_message(f"EPS simple: Added {len(cleaned_tags)} keywords after clean reset", "debug")
 
     elif strategy == 'eps_comprehensive':
         if 'postscript' in available_tags:
