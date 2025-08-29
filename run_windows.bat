@@ -1,9 +1,9 @@
 @echo off
-REM Quick run script for RJ Auto Metadata on Windows
+REM 
 echo Starting RJ Auto Metadata...
 echo.
 
-REM Check if Python is available
+REM 
 python --version >nul 2>&1
 if %errorlevel% neq 0 (
     echo ERROR: Python not found!
@@ -13,7 +13,7 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-REM Check if main.py exists
+REM 
 if not exist main.py (
     echo ERROR: main.py not found!
     echo Please run this script from the RJ Auto Metadata directory.
@@ -23,7 +23,7 @@ if not exist main.py (
     exit /b 1
 )
 
-REM Quick dependency check
+REM 
 python -c "import customtkinter" 2>nul
 if %errorlevel% neq 0 (
     echo Dependencies not installed. Installing...
@@ -38,7 +38,7 @@ if %errorlevel% neq 0 (
     )
 )
 
-REM Run the application
+REM 
 echo Launching application...
 echo Close this window to stop the application.
 echo.

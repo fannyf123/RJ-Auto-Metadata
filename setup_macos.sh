@@ -3,7 +3,7 @@
 # Usage: curl -fsSL https://raw.githubusercontent.com/riiicil/RJ-Auto-Metadata/main/setup_macos.sh | bash
 # Or: chmod +x setup_macos.sh && ./setup_macos.sh
 
-set -e 
+set -e
 
 echo "🍎 RJ Auto Metadata - macOS One-Command Setup"
 echo "=============================================="
@@ -75,7 +75,6 @@ if ! command_exists brew; then
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     
     if [[ $(uname -m) == "arm64" ]]; then
-        # Apple Silicon
         add_to_path "/opt/homebrew/bin"
         eval "$(/opt/homebrew/bin/brew shellenv)"
     else
@@ -101,61 +100,23 @@ brew update || echo "⚠️ Homebrew update failed, continuing..."
 
 echo ""
 echo "🐍 Checking Python installation..."
-python_gui_compatible=false
-
 if command_exists python3; then
     python_version=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')")
-    python_path=$(which python3)
+    python_major=$(echo "$python_version" | cut -d. -f1)
+    python_minor=$(echo "$python_version" | cut -d. -f2)
     
-    echo "  📍 Found Python $python_version at: $python_path"
-    
-    if [[ "$python_path" == *"/Library/Frameworks/Python.framework"* ]] || [[ "$python_path" == *"/usr/bin/python3"* ]]; then
-        echo "  ✅ Python appears to be GUI-compatible (Framework build)"
-        python_gui_compatible=true
+    if [[ $python_major -eq 3 && $python_minor -ge 12 ]]; then
+        echo "  ✅ Python $python_version is compatible"
     else
-        echo "  ⚠️ Python from Homebrew detected - may have GUI issues"
-        echo "     CustomTkinter requires Framework Python for proper GUI rendering"
+        echo "  ⚠️ Python $python_version may not be fully compatible (3.12+ recommended)"
+        echo "  Installing Python 3.12 via Homebrew..."
+        brew install python@3.12
+        add_to_path "$(brew --prefix python@3.12)/bin"
     fi
 else
-    echo "  ❌ Python 3 not found"
-fi
-
-if [[ "$python_gui_compatible" != true ]]; then
-    echo ""
-    echo "🔧 GUI Compatibility Fix Required:"
-    echo "   For proper GUI functionality, please install Python from python.org"
-    echo "   This ensures CustomTkinter works correctly on macOS."
-    echo ""
-    echo "📥 Downloading Python installer..."
-    
-    if [[ $(uname -m) == "arm64" ]]; then
-        python_installer_url="https://www.python.org/ftp/python/3.12.5/python-3.12.5-macos11.pkg"
-        echo "  🔽 Apple Silicon detected - downloading Universal installer"
-    else
-        python_installer_url="https://www.python.org/ftp/python/3.12.5/python-3.12.5-macos10.9.pkg"
-        echo "  🔽 Intel Mac detected - downloading Intel installer"
-    fi
-    
-    curl -L -o python_installer.pkg "$python_installer_url"
-    
-    echo ""
-    echo "📦 Please install Python manually:"
-    echo "   1. Double-click: python_installer.pkg"
-    echo "   2. Follow the installation wizard"
-    echo "   3. ⚠️ IMPORTANT: Select 'Add Python to PATH' if prompted"
-    echo "   4. After installation, re-run this setup script"
-    echo ""
-    echo "🔄 After Python installation, run:"
-    echo "   curl -fsSL https://raw.githubusercontent.com/riiicil/RJ-Auto-Metadata/main/setup_macos.sh | bash"
-    echo ""
-    
-    if command_exists open; then
-        echo "🚀 Opening installer..."
-        open python_installer.pkg
-    fi
-    
-    echo "Setup paused. Please install Python and re-run this script."
-    exit 0
+    echo "  📦 Installing Python 3.12..."
+    brew install python@3.12
+    add_to_path "$(brew --prefix python@3.12)/bin"
 fi
 
 echo ""
@@ -170,7 +131,7 @@ essential_tools=(
     "pango"
     "gdk-pixbuf"
     "librsvg"
-    "pkg-config"
+    "pkg-config" 
 )
 
 failed_installs=()
@@ -189,7 +150,6 @@ for tool in "${essential_tools[@]}"; do
     fi
 done
 
-# Report failed installations
 if [[ ${#failed_installs[@]} -gt 0 ]]; then
     echo ""
     echo "⚠️ Some tools failed to install: ${failed_installs[*]}"
@@ -197,7 +157,6 @@ if [[ ${#failed_installs[@]} -gt 0 ]]; then
     echo "   The app may still work for basic file types."
 fi
 
-# Get source code if we're not already in the project directory
 echo ""
 if [[ -f "main.py" && -f "requirements.txt" ]]; then
     echo "✅ Already in RJ Auto Metadata project directory"
@@ -219,28 +178,20 @@ else
     echo "  ✅ Source code downloaded to: $project_dir"
 fi
 
-# Install Python dependencies
 echo ""
 echo "📦 Installing Python dependencies..."
 echo "   This may take a few minutes..."
 
-# Upgrade pip first
 python3 -m pip install --upgrade pip
-
-# Install requirements with some retry logic
 if python3 -m pip install -r requirements.txt; then
     echo "  ✅ Base requirements installed successfully"
 else
     echo "  ⚠️ Some dependencies failed to install. Trying individual installation..."
-    
-    # Try installing problematic packages individually
     problematic_packages=("cairocffi" "cairosvg")
     for pkg in "${problematic_packages[@]}"; do
         echo "  📦 Trying to install $pkg..."
         python3 -m pip install --no-cache-dir "$pkg" || echo "    ❌ $pkg failed"
     done
-    
-    # Try installing requirements again
     python3 -m pip install -r requirements.txt || echo "    ⚠️ Some packages may still be missing"
 fi
 echo "  📦 Installing additional macOS dependencies..."
@@ -302,7 +253,6 @@ else
     echo "  ❌ ExifTool not found"
     tools_status+=("exiftool:missing")
 fi
-
 echo "  🧪 Testing SVG processing..."
 python3 -c "
 import sys
@@ -351,7 +301,6 @@ echo "🎉 Setup completed!"
 echo "=============================================="
 echo "📁 Project location: $project_dir"
 echo ""
-
 successful_tools=0
 for status in "${tools_status[@]}"; do
     if [[ "$status" == *":ok" ]]; then

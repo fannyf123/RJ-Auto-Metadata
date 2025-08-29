@@ -1,13 +1,13 @@
 @echo off
-REM Quick setup script for RJ Auto Metadata on Windows
-REM Usage: Double-click this file or run setup_windows.bat
+REM 
+REM 
 
 echo ====================================
 echo RJ Auto Metadata - Windows Setup
 echo ====================================
 echo.
 
-REM Check if Python is installed
+REM 
 python --version >nul 2>&1
 if %errorlevel% neq 0 (
     echo ERROR: Python not found!
@@ -23,7 +23,7 @@ echo Python found:
 python --version
 echo.
 
-REM Check if pip is available
+REM 
 python -m pip --version >nul 2>&1
 if %errorlevel% neq 0 (
     echo ERROR: pip not available!
@@ -32,11 +32,11 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-REM Upgrade pip
+REM 
 echo Upgrading pip...
 python -m pip install --upgrade pip
 
-REM Install requirements
+REM 
 echo.
 echo Installing Python dependencies...
 echo This may take a few minutes...
@@ -49,7 +49,7 @@ if %errorlevel% neq 0 (
     echo.
 )
 
-REM Check if main.py exists
+REM 
 if not exist main.py (
     echo ERROR: main.py not found!
     echo Please run this script from the RJ Auto Metadata directory.
@@ -57,14 +57,14 @@ if not exist main.py (
     exit /b 1
 )
 
-REM Run compatibility test if available
+REM 
 if exist test_cross_platform.py (
     echo.
     echo Running compatibility test...
     python test_cross_platform.py
 )
 
-REM Create run script
+REM 
 echo.
 echo Creating run script...
 echo @echo off > run_app.bat

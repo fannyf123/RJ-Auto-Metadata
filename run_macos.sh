@@ -4,16 +4,12 @@
 
 echo "🍎 Starting RJ Auto Metadata on macOS..."
 
-# Set up Homebrew environment
 if [[ $(uname -m) == "arm64" ]]; then
-    # Apple Silicon Mac
     eval "$(/opt/homebrew/bin/brew shellenv)" 2>/dev/null || true
 else
-    # Intel Mac
     eval "$(/usr/local/bin/brew shellenv)" 2>/dev/null || true
 fi
 
-# Check if we're in the right directory
 if [[ ! -f "main.py" ]]; then
     echo "❌ Error: main.py not found!"
     echo "   Please run this script from the RJ Auto Metadata directory."
@@ -21,7 +17,6 @@ if [[ ! -f "main.py" ]]; then
     exit 1
 fi
 
-# Check Python
 if ! command -v python3 &>/dev/null; then
     echo "❌ Python 3 not found!"
     echo "   Please install Python 3.9+ or run the setup script:"
@@ -29,7 +24,6 @@ if ! command -v python3 &>/dev/null; then
     exit 1
 fi
 
-# Quick dependency check
 if ! python3 -c "import customtkinter" &>/dev/null; then
     echo "⚠️ Dependencies not installed or incomplete."
     echo "🔄 Installing dependencies..."
@@ -39,14 +33,11 @@ if ! python3 -c "import customtkinter" &>/dev/null; then
         exit 1
     }
 fi
-
-# Check virtual environment preference
 if [[ -d "venv" ]]; then
     echo "📦 Virtual environment detected, activating..."
     source venv/bin/activate
 fi
 
-# Quick system check
 echo "🔍 Quick system check..."
 tools_ok=0
 total_tools=3
@@ -81,7 +72,6 @@ else
     echo "   Run setup script to install tools: ./setup_macos.sh"
 fi
 
-# Launch the application
 echo ""
 echo "🚀 Launching RJ Auto Metadata..."
 echo "   Close this terminal to stop the application"

@@ -85,7 +85,7 @@ class DonationDialog:
         
         close_button = ctk.CTkButton(
             button_frame,
-            text="Tutup", 
+            text="Close", 
             command=self.dialog.destroy,
             font=self.font_medium,
             fg_color=("gray50", "gray30"),
