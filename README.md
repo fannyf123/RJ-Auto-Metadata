@@ -7,9 +7,16 @@
 
 **© Riiicil 2025**
 
+> 🚀 **New to RJ Auto Metadata?** Check out our [**Quick Start Guide**](QUICK_START_GUIDE.md) for platform-specific setup instructions!
+
 ## 1. Introduction
 
 RJ Auto Metadata is a powerful desktop application built with Python and CustomTkinter, designed to streamline the process of adding descriptive metadata (titles, descriptions, keywords) to various media files. It leverages the capabilities of the Google Gemini generative AI model to analyze file content and suggest relevant metadata, which is then embedded directly into the files using the industry-standard ExifTool utility. This tool is particularly useful for photographers, videographers, graphic designers, and stock media contributors who need to manage and enrich large collections of digital assets efficiently.
+
+**Platform Support:**
+- 🟢 **Windows**: Full installer + source code support
+- 🔵 **macOS**: Source code installation (with automated setup scripts)
+- 🟠 **Linux**: Source code installation (manual dependency setup)
 
 ## 2. Core Features Detailed
 
@@ -158,7 +165,7 @@ Follow these steps if you want to run the application directly using Python:
 1.  **Clone Repository (Optional):**
     ```bash
     git clone https://github.com/riiicil/RJ-Auto-Metadata.git
-    cd RJ_Auto_metadata
+    cd RJ-Auto-Metadata
     ```
     (Or download & extract the source code ZIP from the repository page).
 2.  **Setup Python Environment (Recommended):** Create and activate a virtual environment.

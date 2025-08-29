@@ -42,12 +42,10 @@ def process_jpg_jpeg(input_path, output_dir, selected_api_key: str, stop_event, 
         return "failed_unknown", None, None
     
     try:
-        # Always attempt compression to enforce dimension cap even if file size is small
         compressed_path, is_compressed = compress_image(
             input_path, chosen_temp_folder, stop_event=stop_event
         )
         if is_compressed and compressed_path and os.path.exists(compressed_path):
-            # log_message(f"Compression/dimension cap applied: {os.path.basename(compressed_path)}")
             path_for_api = compressed_path
             temp_files_created.append(compressed_path)
         else:
@@ -114,7 +112,6 @@ def process_jpg_jpeg(input_path, output_dir, selected_api_key: str, stop_event, 
         except Exception: pass
         return "stopped", metadata, None
     
-    # CONDITIONAL EMBEDDING: Skip EXIF embedding if disabled
     if not embedding_enabled:
         log_message(f"Embedding disabled - skipping EXIF metadata for {filename}")
         return "processed_no_exif", metadata, initial_output_path

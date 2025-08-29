@@ -16,6 +16,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 -
 
+## [3.9.2] - 2025-08-29
+
+### Fixed
+- **Cross-Platform Compatibility:** Resolved critical compatibility issues for macOS and Linux systems
+  - Fixed `subprocess.CREATE_NO_WINDOW` Windows-only attribute error that caused application crashes on macOS/Linux
+  - Enhanced platform detection in `src/metadata/exif_writer.py` and `src/utils/system_checks.py` with proper conditional subprocess flags
+  - Improved SVG processing with multi-method conversion fallback (CairoSVG → svglib → Ghostscript) for better macOS support
+  - Added macOS-specific dependency paths for ExifTool, Ghostscript, and FFmpeg detection
+
+### Added
+- **Comprehensive Cross-Platform Documentation:** Created extensive platform-specific setup guides
+  - `QUICK_START_GUIDE.md`: Universal quick start with platform detection and one-command setup
+  - `setup_macos.sh`: Automated one-command setup script for macOS with dependency installation
+  - `run_macos.sh`: Helper scripts for macOS users
+  - `setup_windows.bat`, `run_windows.bat`: Windows automation scripts
+
+### Technical Improvements
+- **Enhanced System Detection:** Improved tool detection with platform-specific installation paths and better error messages
+- **Robust SVG Processing:** Multi-method SVG conversion pipeline with graceful fallbacks for different platform configurations
+- **Automated Setup:** One-command installation scripts that handle all dependencies and environment setup
+- **Platform Isolation:** Proper conditional code execution preventing Windows-specific features from running on other platforms
+
 ## [3.9.1] - 2025-08-28
 
 ### Fixed

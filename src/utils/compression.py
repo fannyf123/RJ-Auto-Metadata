@@ -86,8 +86,6 @@ def compress_image(input_path, temp_folder=None, max_size_mb=MAX_IMAGE_SIZE_MB, 
                 original_width, original_height = img.size
                 original_mode = img.mode
                 has_transparency = original_mode == 'RGBA' or original_mode == 'LA' or 'transparency' in img.info
-
-                # Determine if we need to process by size or dimension
                 needs_resize = original_width > max_dimension or original_height > max_dimension
                 needs_compress = file_size_mb > max_size_mb
                 if not needs_resize and not needs_compress:
@@ -97,15 +95,12 @@ def compress_image(input_path, temp_folder=None, max_size_mb=MAX_IMAGE_SIZE_MB, 
                 if stop_event and stop_event.is_set() or is_stop_requested():
                     log_message("Compression cancelled due to stop request (after load image).")
                     return input_path, False
-
-                # Resize by dimension cap if needed
                 if needs_resize:
                     scale_factor = min(max_dimension / original_width, max_dimension / original_height)
                     new_width = max(1, int(original_width * scale_factor))
                     new_height = max(1, int(original_height * scale_factor))
                     if new_width != original_width or new_height != original_height:
                         img = img.resize((new_width, new_height), Image.LANCZOS)
-                        # log_message(f"Resize {filename}: {original_width}x{original_height} → {new_width}x{new_height}")
 
                 if stop_event and stop_event.is_set() or is_stop_requested():
                     log_message("Compression cancelled due to stop request (after resize).")
@@ -120,7 +115,6 @@ def compress_image(input_path, temp_folder=None, max_size_mb=MAX_IMAGE_SIZE_MB, 
                         log_message("Compression cancelled due to stop request (before conversion to JPG).")
                         return input_path, False
 
-                    # log_message("Converting PNG to JPG for API efficiency")
                     try:
                         if original_mode in ['RGBA', 'LA']:
                             background = Image.new('RGB', img.size, (255, 255, 255))
@@ -152,7 +146,6 @@ def compress_image(input_path, temp_folder=None, max_size_mb=MAX_IMAGE_SIZE_MB, 
                                 except Exception as e:
                                     log_message(f"Error aggressive JPG compression: {e}")
 
-                            # log_message(f"PNG→JPG: {file_size_mb:.2f}MB → {jpg_size_mb:.2f}MB ({compression_ratio:.1f}% reduction)")
                             return jpg_path, True
                         else:
                             log_message("Error: JPG conversion result not found")
@@ -193,7 +186,6 @@ def compress_image(input_path, temp_folder=None, max_size_mb=MAX_IMAGE_SIZE_MB, 
                                 except Exception as e:
                                     log_message(f"Error aggressive JPG compression: {e}")
 
-                            # log_message(f"JPG: {file_size_mb:.2f}MB → {compressed_size_mb:.2f}MB ({compression_ratio:.1f}% reduction)")
                             return compressed_path, True
                     except Exception as e:
                         log_message(f"Error JPG compression: {e}")
@@ -215,7 +207,6 @@ def compress_image(input_path, temp_folder=None, max_size_mb=MAX_IMAGE_SIZE_MB, 
                         if os.path.exists(jpg_path):
                             jpg_size_mb = os.path.getsize(jpg_path) / (1024 * 1024)
                             compression_ratio = (1 - (jpg_size_mb / max(file_size_mb, 0.0001))) * 100
-                            #  log_message(f"{ext_lower}→JPG: {file_size_mb:.2f}MB → {jpg_size_mb:.2f}MB ({compression_ratio:.1f}% reduction)")
                             return jpg_path, True
                     except Exception as e:
                         log_message(f"Error converting to JPG: {e}")

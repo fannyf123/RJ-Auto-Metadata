@@ -95,7 +95,6 @@ def extract_frames_from_video(video_path, output_folder, num_frames=3, stop_even
 
             if success and os.path.exists(frame_path):
                 extracted_frames.append(frame_path)
-                # log_message(f"Frame {i+1}/{len(frame_positions)} extracted: {os.path.basename(frame_path)}")
             else:
                 log_message(f"Error: Failed to save frame {i+1} from {filename}")
 
@@ -154,7 +153,6 @@ def process_video(input_path, output_dir, selected_api_key: str, stop_event, aut
 
         frame_filename = os.path.basename(frame_path)
         try:
-            # Always attempt compression to enforce dimension cap even if small
             compressed_path, is_compressed = compress_image(
                 frame_path, chosen_temp_folder, stop_event=stop_event
             )
@@ -239,7 +237,6 @@ def process_video(input_path, output_dir, selected_api_key: str, stop_event, aut
 
     final_status = "processed_no_exif"
     if ext_lower in WRITABLE_METADATA_VIDEO_EXTENSIONS:
-        # CONDITIONAL EMBEDDING: Skip EXIF embedding if disabled
         if not embedding_enabled:
             log_message(f"Embedding disabled - skipping EXIF metadata for video: {filename}")
             final_status = "processed_no_exif"

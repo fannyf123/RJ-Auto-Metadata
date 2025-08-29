@@ -40,7 +40,6 @@ def process_png(input_path, output_dir, selected_api_key: str, stop_event, auto_
         return "failed_unknown", None, None
     
     try:
-        # Always attempt compression to enforce dimension cap even if file size is small
         compressed_path, is_compressed = compress_image(
             input_path, chosen_temp_folder, stop_event=stop_event
         )
@@ -104,7 +103,6 @@ def process_png(input_path, output_dir, selected_api_key: str, stop_event, auto_
         except Exception: pass
         return "stopped", metadata, None
     
-    # PNG format does not support EXIF embedding reliably
     if not embedding_enabled:
         log_message(f"Embedding disabled - PNG format does not support EXIF: {filename}")
     else:

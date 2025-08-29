@@ -20,6 +20,7 @@ import time
 import sys
 import subprocess
 import re
+import platform
 
 from sqlalchemy import text
 from src.utils.logging import log_message
@@ -27,7 +28,9 @@ from src.api.gemini_api import check_stop_event, is_stop_requested
 
 def check_exiftool_exists():
     try:
-        result = subprocess.run(["exiftool", "-ver"], check=True, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        # Cross-platform subprocess creation flags
+        creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
+        result = subprocess.run(["exiftool", "-ver"], check=True, capture_output=True, text=True, creationflags=creation_flags)
         log_message(f"Exiftool found (version: {result.stdout.strip()}).")
         global EXIFTOOL_PATH
         EXIFTOOL_PATH = "exiftool"
@@ -58,7 +61,8 @@ def check_exiftool_exists():
                 log_message(f"Checking exiftool at: {normalized_path}")
                 if os.path.exists(normalized_path):
                     try:
-                         test_result = subprocess.run([normalized_path, "-ver"], check=True, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                         creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
+                         test_result = subprocess.run([normalized_path, "-ver"], check=True, capture_output=True, text=True, creationflags=creation_flags)
                          log_message(f"Exiftool found and valid at: {normalized_path} (version: {test_result.stdout.strip()})")
                          EXIFTOOL_PATH = normalized_path
                          return True
@@ -353,9 +357,10 @@ def write_exif_with_exiftool(image_path, output_path, metadata, stop_event):
         clearing_fields = [arg for arg in clear_command if '=' in arg and arg.endswith('=')]
         # log_message(f"Clearing {len(clearing_fields)} metadata fields for {strategy} strategy", "debug")
         
+        creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
         result = subprocess.run(clear_command, check=False, capture_output=True, text=True,
                                 encoding='utf-8', errors='replace', timeout=30,
-                                creationflags=subprocess.CREATE_NO_WINDOW)
+                                creationflags=creation_flags)
         if result.returncode == 0:
             log_message(f"Old metadata successfully cleared from {os.path.basename(output_path)}")
         else:
@@ -555,13 +560,14 @@ def write_exif_with_exiftool(image_path, output_path, metadata, stop_event):
             log_message("Process stopped before writing new metadata.")
             return False, "stopped"
 
+        creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
         exiftool_process = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             encoding='utf-8',
             errors='replace',
-            creationflags=subprocess.CREATE_NO_WINDOW
+            creationflags=creation_flags
         )
 
         while exiftool_process.poll() is None:
@@ -714,13 +720,14 @@ def _execute_video_exiftool_command(command, output_path, stop_event, title, des
             log_message("Process stopped before writing metadata to video.")
             return False, "stopped"
         
+        creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
         exiftool_process = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             encoding='utf-8',
             errors='replace',
-            creationflags=subprocess.CREATE_NO_WINDOW
+            creationflags=creation_flags
         )
 
         timeout_seconds = 45
@@ -804,12 +811,13 @@ def _try_minimal_video_metadata(output_path, stop_event, title, description):
     
     try:
         log_message(f"Running minimal command with {len(minimal_command)} arguments")
+        creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
         result = subprocess.run(
             minimal_command,
             capture_output=True,
             text=True,
             timeout=20,
-            creationflags=subprocess.CREATE_NO_WINDOW
+            creationflags=creation_flags
         )
     except subprocess.TimeoutExpired:
         log_message("Minimal video metadata command also timed out")

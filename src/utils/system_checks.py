@@ -45,13 +45,14 @@ def _run_command(command_parts):
          log_message(f"Executable '{executable}' does not exist or is not a file.")
          return False
     try:
+        creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
         process = subprocess.run(
             command_parts,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             check=False,
-            creationflags=subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
+            creationflags=creation_flags
         )
         log_message(f"Ran command: {' '.join(command_parts)}, Return Code: {process.returncode}")
         if process.returncode != 0:
@@ -83,7 +84,26 @@ def check_ghostscript():
                 gs_executable = bundled_path
                 log_message(f"Ghostscript found in bundled path!")
                 break
-    else:
+    elif platform.system() == "Darwin":
+        potential_names = ["gs"]
+        macos_paths = [
+            "/opt/homebrew/bin/gs", 
+            "/usr/local/bin/gs",  
+            "/opt/local/bin/gs",
+            "/sw/bin/gs"
+        ]
+        for path in macos_paths:
+            if os.path.exists(path):
+                gs_executable = path
+                log_message(f"Ghostscript found at {path}!")
+                break
+        
+        if not gs_executable:
+            bundled_path = os.path.join(base_dir, "tools", "ghostscript", "bin", "gs")
+            if os.path.exists(bundled_path):
+                gs_executable = bundled_path
+                log_message(f"Ghostscript found in bundled path!")
+    else:  
         potential_names = ["gs"]
         bundled_path = os.path.join(base_dir, "tools", "ghostscript", "bin", "gs")
         if os.path.exists(bundled_path):
@@ -96,19 +116,20 @@ def check_ghostscript():
             path_executable = shutil.which(name)
             if path_executable:
                 gs_executable = path_executable
-                log_message(f"Ghostscript found in PATH!")
+                log_message(f"Ghostscript found in PATH: {path_executable}")
                 break
 
     if gs_executable:
         GHOSTSCRIPT_PATH = gs_executable
         try:
+            creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
             process = subprocess.run(
                 [GHOSTSCRIPT_PATH, "-h"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 check=False,
-                creationflags=subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
+                creationflags=creation_flags
             )
             stdout_output = process.stdout.strip()
             stderr_output = process.stderr.strip()
@@ -117,13 +138,19 @@ def check_ghostscript():
             if process.returncode == 0 or "ghostscript" in stdout_output.lower() or "ghostscript" in stderr_output.lower():
                  return True
             else:
+                 log_message(f"Ghostscript found but test failed: {GHOSTSCRIPT_PATH}")
                  GHOSTSCRIPT_PATH = None
                  return False
         except Exception as e:
+            log_message(f"Error testing Ghostscript: {e}")
             GHOSTSCRIPT_PATH = None
             return False
     else:
-        log_message("Could not find Ghostscript executable in bundled path or system PATH.")
+        log_message("Ghostscript not found. Vector files (.ai, .eps, .svg) will not be processed.")
+        if platform.system() == "Darwin":
+            log_message("To install Ghostscript on macOS, try: 'brew install ghostscript'")
+        elif platform.system() == "Linux":
+            log_message("To install Ghostscript on Linux, try: 'sudo apt install ghostscript' or equivalent")
         return False
 
 
@@ -138,35 +165,54 @@ def check_ffmpeg():
     if os.path.exists(bundled_path):
         ffmpeg_executable = bundled_path
         log_message(f"FFmpeg found in bundled path!")
+    if not ffmpeg_executable and platform.system() == "Darwin":
+        macos_paths = [
+            "/opt/homebrew/bin/ffmpeg", 
+            "/usr/local/bin/ffmpeg", 
+            "/opt/local/bin/ffmpeg", 
+            "/sw/bin/ffmpeg" 
+        ]
+        for path in macos_paths:
+            if os.path.exists(path):
+                ffmpeg_executable = path
+                log_message(f"FFmpeg found at {path}!")
+                break
 
     if not ffmpeg_executable:
         log_message("Bundled FFmpeg not found, checking PATH...")
         path_executable = shutil.which("ffmpeg")
         if path_executable:
             ffmpeg_executable = path_executable
-            log_message(f"FFmpeg found in PATH!")
+            log_message(f"FFmpeg found in PATH: {path_executable}")
 
     if ffmpeg_executable:
         FFMPEG_PATH = ffmpeg_executable
         try:
+            creation_flags = subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
             process = subprocess.run(
                 [FFMPEG_PATH, "-version"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 check=False,
-                creationflags=subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
+                creationflags=creation_flags
             )
             if "ffmpeg version" in process.stderr.lower() or "ffmpeg version" in process.stdout.lower():
                  return True
             else:
+                 log_message(f"FFmpeg found but test failed: {FFMPEG_PATH}")
                  FFMPEG_PATH = None
                  return False
         except Exception as e:
+            log_message(f"Error testing FFmpeg: {e}")
             FFMPEG_PATH = None
             return False
     else:
-        log_message("Could not find FFmpeg executable in bundled path or system PATH.")
+        log_message("FFmpeg not found. Video files will not be processed.")
+        if platform.system() == "Darwin":
+            log_message("To install FFmpeg on macOS, try: 'brew install ffmpeg'")
+        elif platform.system() == "Linux":
+            log_message("To install FFmpeg on Linux, try: 'sudo apt install ffmpeg' or equivalent")
         return False
 
 def check_gtk_dependencies():

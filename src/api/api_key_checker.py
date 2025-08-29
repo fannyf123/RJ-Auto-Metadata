@@ -5,7 +5,6 @@ def check_api_keys_status(api_keys, model=None):
     results = {}
     model_to_use = model or DEFAULT_MODEL
     api_endpoint = get_api_endpoint(model_to_use)
-    # Use minimal headers like extension (no User-Agent to avoid rate limit triggers)
     headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [

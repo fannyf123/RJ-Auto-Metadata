@@ -124,7 +124,6 @@ def write_to_csv_with_lock(csv_path, header, data_row):
         return False
 
 def write_to_csv_thread_safe(csv_path, header, data_row):
-    """Thread-safe CSV writing dengan global lock"""
     with _csv_write_lock:
         csv_dir = os.path.dirname(csv_path)
         if not os.path.exists(csv_dir):
@@ -140,14 +139,11 @@ def write_to_csv_thread_safe(csv_path, header, data_row):
             with open(csv_path, 'a', newline='', encoding='utf-8') as csvfile:
                 writer = csv.writer(csvfile, quoting=csv.QUOTE_MINIMAL)
                 
-                # Atomic header check and write
                 if not file_exists or os.path.getsize(csv_path) == 0: 
                     writer.writerow(header)
-                    csvfile.flush()  # Force header write
-                
-                # Write data row
+                    csvfile.flush() 
                 writer.writerow(data_row)
-                csvfile.flush()  # Force data write
+                csvfile.flush()  
                 
             return True
             
