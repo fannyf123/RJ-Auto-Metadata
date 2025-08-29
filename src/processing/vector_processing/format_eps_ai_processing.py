@@ -126,7 +126,7 @@ def convert_eps_to_jpg(eps_path, output_jpg_path, ghostscript_path, stop_event=N
                     if is_compressed and compressed_path and os.path.exists(compressed_path):
                         try:
                             os.replace(compressed_path, output_jpg_path)
-                            log_message(f"Compressed rasterized vector: {os.path.basename(output_jpg_path)}")
+                            # log_message(f"Compressed rasterized vector: {os.path.basename(output_jpg_path)}")
                         except Exception:
                             pass
                 except Exception as e_comp:

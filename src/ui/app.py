@@ -47,7 +47,7 @@ from src.utils.system_checks import (
 from src.metadata.exif_writer import check_exiftool_exists
 from src.api.api_key_checker import check_api_keys_status
 
-APP_VERSION = "3.9.0"
+APP_VERSION = "3.9.1"
 CONFIG_FILE = "config.json"
 
 class MetadataApp(ctk.CTk):
@@ -969,7 +969,7 @@ Configuration of application behavior:
                             "gemini-2.0-flash",
                             "gemini-2.0-flash-lite",
                             "gemini-2.5-flash",
-                            "gemini-2.5-flash-lite-preview-06-17",
+                            "gemini-2.5-flash-lite",
                             "gemini-2.5-pro"
                         ]
                         self.available_priorities = ["Detailed", "Balanced", "Less"]
@@ -1486,6 +1486,8 @@ Configuration of application behavior:
             r"^⚠  .+\.\w+$",
             r"^⚠ .+\.\w+ \(.*\)$",
             r"^Cool-down \d+ seconds before processing\.\.\.$",
+            r"^Retry Batch \d+: Waiting for \d+ file\.\.\.$",
+            r"^Retry cool-down \d+ seconds before next batch\.\.\.$",
             r"^Successfully loaded \d+ API key$",
             r"^API Keys \(\d+\) saved to file$",
             r"^Adjusting worker count to \d+ to match available API keys\.$",
@@ -1507,6 +1509,7 @@ Configuration of application behavior:
             r"^AUTO RETRY COMPLETED: \d+ file\(s\) still failed after \d+ attempts$",
             r"^AUTO RETRY: No retryable files found \(.*\)$",
             r"^AUTO RETRY SUCCESS: All files processed successfully!$", 
+            r"^RETRY ATTEMPT \d+: \d+ file\(S\) remaining$",
             r"^New config file created$",
             r"^============= Summary Process =============",
             r"^Total file: \d+$",

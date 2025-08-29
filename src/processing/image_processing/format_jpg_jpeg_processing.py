@@ -47,7 +47,7 @@ def process_jpg_jpeg(input_path, output_dir, selected_api_key: str, stop_event, 
             input_path, chosen_temp_folder, stop_event=stop_event
         )
         if is_compressed and compressed_path and os.path.exists(compressed_path):
-            log_message(f"Compression/dimension cap applied: {os.path.basename(compressed_path)}")
+            # log_message(f"Compression/dimension cap applied: {os.path.basename(compressed_path)}")
             path_for_api = compressed_path
             temp_files_created.append(compressed_path)
         else:

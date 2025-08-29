@@ -31,7 +31,7 @@ from src.processing.image_processing.format_png_processing import process_png
 from src.processing.vector_processing.format_eps_ai_processing import convert_eps_to_jpg
 from src.processing.vector_processing.format_svg_processing import convert_svg_to_jpg
 from src.processing.video_processing import process_video
-from src.api.gemini_api import check_stop_event, is_stop_requested, select_smart_api_key, calculate_smart_delay
+from src.api.gemini_api import check_stop_event, is_stop_requested, select_smart_api_key
 from src.metadata.csv_exporter import write_to_platform_csvs
 from src.metadata.exif_writer import write_exif_with_exiftool
 
@@ -100,7 +100,7 @@ def process_vector_file(input_path, output_dir, selected_api_key: str, ghostscri
         if check_stop_event(stop_event):
             return "stopped", None, None
         
-        log_message(f"Starting conversion of {ext_lower.upper()} to {target_format}...")
+        # log_message(f"Starting conversion of {ext_lower.upper()} to {target_format}...")
         if conversion_func == convert_eps_to_jpg:
              conversion_success, error_msg = conversion_func(input_path, temp_raster_path, ghostscript_path, stop_event)
         else:
@@ -113,7 +113,7 @@ def process_vector_file(input_path, output_dir, selected_api_key: str, ghostscri
                 except Exception: pass
             return "failed_conversion", None, None
         
-        log_message(f"Conversion of {ext_lower.upper()} to {target_format} completed.")
+        # log_message(f"Conversion of {ext_lower.upper()} to {target_format} completed.")
         
     
     api_key_to_use = selected_api_key
@@ -514,16 +514,9 @@ def batch_process_files(input_dir, output_dir, api_keys, ghostscript_path, renam
             batch_index = 0
             while batch_index < len(files_to_process) and not (stop_event and stop_event.is_set() or is_stop_requested()):
                 if batch_index > 0 and delay_seconds > 0 and not (stop_event and stop_event.is_set() or is_stop_requested()):
-                    # Calculate smart delay based on API key blacklist status
-                    effective_delay, delay_reason = calculate_smart_delay(api_keys, delay_seconds)
-                    
-                    if effective_delay != delay_seconds:
-                        # Smart delay override is active
-                        log_message(f"🔄 {delay_reason}", "warning")
-                        cooldown_msg = f"Smart Cool-down {effective_delay:.1f} seconds (API blacklist override)..."
-                    else:
-                        # Normal delay
-                        cooldown_msg = f"Cool-down {effective_delay} seconds before processing..."
+                    # Use user-defined delay
+                    effective_delay = delay_seconds
+                    cooldown_msg = f"Cool-down {effective_delay} seconds before processing..."
                     
                     log_message(cooldown_msg, "cooldown")
                     
@@ -688,7 +681,6 @@ def batch_process_files(input_dir, output_dir, api_keys, ghostscript_path, renam
         
         # AUTO RETRY LOGIC: Process failed files automatically if enabled
         retry_attempt = 1
-        retry_files_data = []
         
         if auto_retry_enabled and failed_count > 0 and not (stop_event and stop_event.is_set() or is_stop_requested()):
             log_message("", None)
@@ -704,88 +696,179 @@ def batch_process_files(input_dir, output_dir, api_keys, ghostscript_path, renam
             
             retry_files = [f[0] for f in retryable_failed_files]  # Extract file paths for processing
             
-            while retry_files and retry_attempt <= 3 and not (stop_event and stop_event.is_set() or is_stop_requested()):
+            # Continuous retry loop until all files succeed or become non-retryable
+            while retry_files and not (stop_event and stop_event.is_set() or is_stop_requested()):
                 log_message(f"", None)
                 log_message(f"RETRY ATTEMPT {retry_attempt}: {len(retry_files)} file(s) remaining", "warning")
                 
                 retry_processed = 0
                 retry_failed = 0
                 retry_stopped = 0
+                retry_processed_files = set()
+                current_retry_failed_files = []
                 
+                # Use same batching logic as main processing
                 with ThreadPoolExecutor(max_workers=effective_num_workers) as retry_executor:
+                    log_message(f"Sending {len(retry_files)} retry jobs to {effective_num_workers} workers...", "warning")
+                    
+                    retry_batch_index = 0
                     retry_futures = []
                     
-                    for input_path in retry_files:
+                    while retry_batch_index < len(retry_files) and not (stop_event and stop_event.is_set() or is_stop_requested()):
+                        # Apply cooldown between batches (except for first batch)
+                        if retry_batch_index > 0 and delay_seconds > 0 and not (stop_event and stop_event.is_set() or is_stop_requested()):
+                            effective_delay = delay_seconds
+                            cooldown_msg = f"Retry cool-down {effective_delay} seconds before next batch..."
+                            
+                            log_message(cooldown_msg, "cooldown")
+                            
+                            cooldown_start = time.time()
+                            while time.time() - cooldown_start < effective_delay:
+                                if stop_event and stop_event.is_set() or is_stop_requested():
+                                    log_message("Retry processing stopped during cooldown.", "warning")
+                                    break
+                                time.sleep(0.1)
+                        
                         if stop_event and stop_event.is_set() or is_stop_requested():
+                            log_message("Retry processing stopped after cooldown.", "warning")
                             break
-                            
-                        try:
-                            assigned_api_key = api_keys[current_api_key_index % len(api_keys)]
-                            current_api_key_index = (current_api_key_index + 1) % len(api_keys)
-                            
-                            future = retry_executor.submit(
-                                process_single_file,
-                                input_path,
-                                output_dir,
-                                [assigned_api_key],
-                                ghostscript_path,
-                                rename_enabled,
-                                auto_kategori_enabled,
-                                auto_foldering_enabled,
-                                selected_model,
-                                embedding_enabled,
-                                keyword_count,
-                                priority,
-                                stop_event
-                            )
-                            retry_futures.append((future, input_path))
-                        except Exception as e:
-                            log_message(f"Error submitting retry job: {e}", "error")
-                            retry_failed += 1
-                    
-                    # Process retry results
-                    retry_successful_files = []
-                    remaining_failed_files = []
-                    
-                    for future, input_path in retry_futures:
-                        if stop_event and stop_event.is_set() or is_stop_requested():
-                            break
-                            
-                        try:
-                            result = future.result(timeout=120)
-                            filename = os.path.basename(input_path)
-                            
-                            if not result:
-                                retry_failed += 1
-                                remaining_failed_files.append(input_path)
+                        
+                        # Get current batch of files (respecting worker limit)
+                        current_retry_batch = retry_files[retry_batch_index:retry_batch_index + effective_num_workers]
+                        current_retry_batch = [f for f in current_retry_batch 
+                                             if os.path.exists(f) and f not in retry_processed_files]
+                        
+                        if not current_retry_batch:
+                            retry_batch_index += effective_num_workers
+                            continue
+                        
+                        batch_retry_futures = []
+                        for input_path in current_retry_batch:
+                            if stop_event and stop_event.is_set() or is_stop_requested():
+                                break
+                                
+                            if not os.path.exists(input_path) or input_path in retry_processed_files:
                                 continue
                             
-                            status = result.get("status", "failed")
+                            original_filename = os.path.basename(input_path)
+                            log_message(f" → Retrying {original_filename}...", "info")
                             
-                            if status in ["processed_exif", "processed_no_exif", "processed_exif_failed", "processed_unknown_exif_status"]:
-                                retry_processed += 1
-                                retry_successful_files.append(input_path)
-                                processed_count += 1  # Update main counter
-                                failed_count -= 1      # Reduce failed counter
-                                # Remove from failed_files list
-                                failed_files = [(fp, st, att) for fp, st, att in failed_files if fp != input_path]
-                                log_message(f"✓ RETRY SUCCESS: {filename}")
-                            elif status == "stopped":
-                                retry_stopped += 1
-                                log_message(f"⊘ RETRY STOPPED: {filename}")
-                                break
-                            else:
-                                retry_failed += 1
-                                remaining_failed_files.append(input_path)
-                                log_message(f"✗ RETRY FAILED: {filename} ({status})")
+                            try:
+                                assigned_api_key = api_keys[current_api_key_index % len(api_keys)]
+                                current_api_key_index = (current_api_key_index + 1) % len(api_keys)
                                 
-                        except Exception as e:
-                            retry_failed += 1
-                            remaining_failed_files.append(input_path)
-                            log_message(f"✗ RETRY ERROR: {os.path.basename(input_path)} - {e}")
+                                future = retry_executor.submit(
+                                    process_single_file,
+                                    input_path,
+                                    output_dir,
+                                    [assigned_api_key],
+                                    ghostscript_path,
+                                    rename_enabled,
+                                    auto_kategori_enabled,
+                                    auto_foldering_enabled,
+                                    selected_model,
+                                    embedding_enabled,
+                                    keyword_count,
+                                    priority,
+                                    stop_event
+                                )
+                                batch_retry_futures.append((future, input_path))
+                                retry_futures.append((future, input_path))
+                                retry_processed_files.add(input_path)
+                            except Exception as e:
+                                log_message(f"Error submitting retry job for {original_filename}: {e}", "error")
+                                retry_failed += 1
+                                current_retry_failed_files.append(input_path)
+                        
+                        current_batch_size = len(batch_retry_futures)
+                        
+                        if batch_retry_futures:
+                            log_message(f"Retry Batch {retry_batch_index//effective_num_workers + 1}: Waiting for {len(batch_retry_futures)} file...", "warning")
+                            
+                            # Process batch results
+                            for future, input_path in batch_retry_futures:
+                                if stop_event and stop_event.is_set() or is_stop_requested():
+                                    for remaining_future, _ in batch_retry_futures:
+                                        if not remaining_future.done():
+                                            remaining_future.cancel()
+                                    log_message("Retry processing stopped while waiting for batch results.", "warning")
+                                    break
+                                
+                                try:
+                                    result = future.result(timeout=120)
+                                    filename = os.path.basename(input_path)
+                                    
+                                    if not result:
+                                        retry_failed += 1
+                                        current_retry_failed_files.append(input_path)
+                                        log_message(f"⨯ RETRY: Invalid result for {filename}", "error")
+                                        continue
+                                    
+                                    status = result.get("status", "failed")
+                                    
+                                    if status in ["processed_exif", "processed_no_exif", "processed_exif_failed", "processed_unknown_exif_status"]:
+                                        retry_processed += 1
+                                        processed_count += 1  # Update main counter
+                                        failed_count -= 1      # Reduce failed counter
+                                        # Remove from failed_files list
+                                        failed_files = [(fp, st, att) for fp, st, att in failed_files if fp != input_path]
+                                        new_name = result.get("new_filename")
+                                        log_msg = f"✓ RETRY SUCCESS: {filename}" + (f" → {new_name}" if new_name else "")
+                                        log_message(log_msg)
+                                    elif status == "stopped":
+                                        retry_stopped += 1
+                                        log_message(f"⊘ RETRY STOPPED: {filename}")
+                                        break
+                                    else:
+                                        retry_failed += 1
+                                        # Update attempt count for this file
+                                        updated_failed_files = []
+                                        for fp, st, att in failed_files:
+                                            if fp == input_path:
+                                                updated_failed_files.append((fp, status, att + 1))
+                                            else:
+                                                updated_failed_files.append((fp, st, att))
+                                        failed_files = updated_failed_files
+                                        
+                                        # Only add to retry list if still retryable
+                                        if is_retryable(status, att + 1):
+                                            current_retry_failed_files.append(input_path)
+                                        
+                                        log_message(f"✗ RETRY FAILED: {filename} ({status})")
+                                        
+                                except concurrent.futures.TimeoutError:
+                                    retry_failed += 1
+                                    current_retry_failed_files.append(input_path)
+                                    log_message(f"⨯ RETRY TIMEOUT: {os.path.basename(input_path)}", "error")
+                                except concurrent.futures.CancelledError:
+                                    log_message(f"Retry job cancelled for {os.path.basename(input_path)}", "warning")
+                                    retry_stopped += 1
+                                except Exception as e:
+                                    retry_failed += 1
+                                    current_retry_failed_files.append(input_path)
+                                    log_message(f"✗ RETRY ERROR: {os.path.basename(input_path)} - {e}")
+                        
+                        if stop_event and stop_event.is_set() or is_stop_requested():
+                            log_message("Stop detected after processing retry batch results.", "warning")
+                            break
+                        
+                        retry_batch_index += effective_num_workers
                 
-                # Update retry files for next iteration
-                retry_files = remaining_failed_files
+                # Update retry files for next iteration - only include files that are still retryable
+                retry_files = []
+                for file_path in current_retry_failed_files:
+                    if file_path and os.path.exists(file_path):
+                        # Find current attempt count for this file
+                        current_attempt = 1
+                        current_status = "failed_unknown"
+                        for fp, st, att in failed_files:
+                            if fp == file_path:
+                                current_attempt = att
+                                current_status = st
+                                break
+                        
+                        if is_retryable(current_status, current_attempt):
+                            retry_files.append(file_path)
                 
                 log_message(f"RETRY ATTEMPT {retry_attempt} RESULTS:")
                 log_message(f"✓ Success: {retry_processed}")
@@ -793,23 +876,15 @@ def batch_process_files(input_dir, output_dir, api_keys, ghostscript_path, renam
                 if retry_stopped > 0:
                     log_message(f"⊘ Stopped: {retry_stopped}")
                 
-                # Smart delay between retry attempts
-                if retry_files and retry_attempt < 3 and not (stop_event and stop_event.is_set() or is_stop_requested()):
-                    effective_delay, delay_reason = calculate_smart_delay(api_keys, delay_seconds)
-                    log_message(f"Retry cooldown {effective_delay:.1f}s before next attempt...", "cooldown")
-                    
-                    cooldown_start = time.time()
-                    while time.time() - cooldown_start < effective_delay:
-                        if stop_event and stop_event.is_set() or is_stop_requested():
-                            break
-                        time.sleep(0.1)
-                
                 retry_attempt += 1
                 
-                # Break if no progress made
-                if retry_processed == 0 and retry_failed > 0:
-                    log_message(f"No progress made in retry attempt {retry_attempt-1}, stopping auto retry", "warning")
+                # Break if no progress made or all files became non-retryable
+                if retry_processed == 0 and len(retry_files) == 0:
+                    log_message(f"No retryable files remaining after attempt {retry_attempt-1}, stopping auto retry", "warning")
                     break
+                elif retry_processed == 0 and retry_failed > 0:
+                    log_message(f"No progress made in retry attempt {retry_attempt-1}, but retryable files remain", "warning")
+                    # Continue to next attempt
             
             if retry_files and not (stop_event and stop_event.is_set() or is_stop_requested()):
                 log_message(f"AUTO RETRY COMPLETED: {len(retry_files)} file(s) still failed after {retry_attempt-1} attempts", "warning")

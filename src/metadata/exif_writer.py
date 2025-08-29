@@ -233,8 +233,8 @@ def write_exif_with_exiftool(image_path, output_path, metadata, stop_event):
             cleaned_tags.append(sanitized_tag)
     
     cleaned_tags = cleaned_tags[:max_kw]
-    if len(cleaned_tags) > 0:
-        log_message(f"Keywords processed: {len(cleaned_tags)}/{max_kw}", "debug")
+    # if len(cleaned_tags) > 0:
+    #     log_message(f"Keywords processed: {len(cleaned_tags)}/{max_kw}", "debug")
 
     if stop_event.is_set() or is_stop_requested():
         log_message("Process stopped before writing EXIF.")
@@ -441,11 +441,11 @@ def write_exif_with_exiftool(image_path, output_path, metadata, stop_event):
                     safe_tag = tag[:64] if len(tag) > 64 else tag
                     command.append(f"{available_tags['iptc']['keywords']}+={safe_tag}")
         
-        if cleaned_tags:
-            log_message(f"XMP-first: Added {len(cleaned_tags)} keywords to both XMP and IPTC after reset", "debug")
+        # if cleaned_tags:
+        #     log_message(f"XMP-first: Added {len(cleaned_tags)} keywords to both XMP and IPTC after reset", "debug")
 
     elif strategy == 'xmp_only':
-        log_message("Using XMP-only strategy with comprehensive reset")
+        # log_message("Using XMP-only strategy with comprehensive reset")
         
         command.extend([
             "-XMP-dc:Title=", "-XMP-dc:Description=", "-XMP-dc:Subject=",

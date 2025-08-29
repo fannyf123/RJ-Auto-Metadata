@@ -16,6 +16,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 -
 
+## [3.9.1] - 2025-08-28
+
+### Fixed
+- **Auto Retry System Loop Fix:** Resolved critical bug where Auto Retry only executed one iteration instead of continuing until all files are processed
+  - Fixed retry loop logic to properly continue processing until successful completion or maximum attempts reached
+  - Enhanced retry counter and progress tracking for better user feedback
+- **Rate Limiting Optimization:** Removed ineffective blacklist and smart delay systems that caused unnecessary processing delays
+  - Eliminated API key blacklisting mechanism that didn't align with actual Google API behavior
+  - Removed smart delay override system in favor of more efficient direct rate limit handling
+  - Streamlined rate limiting approach for better performance and reliability
+- **Gemini 2.5 Models Empty Response Fix:** Resolved persistent "no parts" issue with thinking models
+  - Enhanced response parsing for Gemini 2.5 series models that use thinking capabilities
+  - Improved extraction methods for thinking model responses with alternative fallback strategies
+  - Better handling of `thoughtsTokenCount` detection and response structure analysis
+
+### Changed
+- **Hybrid API Architecture Implementation:** Introduced intelligent API method selection for optimal performance
+  - **Gemini 2.5 Series → Google SDK:** Full thinking control with specific configurations:
+    - `gemini-2.5-pro`: Dynamic thinking (thinking_budget: -1) for complex analysis
+    - `gemini-2.5-flash`: Thinking disabled (thinking_budget: 0) for faster responses  
+    - `gemini-2.5-flash-lite`: Minimal thinking (thinking_budget: 1024) for balanced performance
+  - **Other Models → REST API:** Continued use of efficient REST API for non-thinking models (1.5 and 2.0 series)
+  - Automatic routing between SDK and REST API based on model capabilities without cross-fallback
+- **Enhanced Debug Logging:** Improved logging system to distinguish between SDK and REST API requests for better troubleshooting
+
+### Technical Improvements
+- **SDK Integration:** Proper implementation of Google Generative AI SDK for 2.5 series models with correct thinking parameter configuration
+- **Response Normalization:** Unified response format between SDK and REST API for consistent processing pipeline
+- **Error Handling Enhancement:** Better error classification and handling for both SDK and REST API methods
+- **Performance Optimization:** Reduced unnecessary delays and improved processing efficiency through architectural refinements
+
 ## [3.9.0] - 2025-08-21
 
 ### Added
