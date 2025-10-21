@@ -11,7 +11,7 @@
 
 ## 1. Introduction
 
-RJ Auto Metadata is a powerful desktop application built with Python and CustomTkinter, designed to streamline the process of adding descriptive metadata (titles, descriptions, keywords) to various media files. It leverages the capabilities of the Google Gemini generative AI model to analyze file content and suggest relevant metadata, which is then embedded directly into the files using the industry-standard ExifTool utility. This tool is particularly useful for photographers, videographers, graphic designers, and stock media contributors who need to manage and enrich large collections of digital assets efficiently.
+RJ Auto Metadata is a powerful desktop application built with Python and CustomTkinter, designed to streamline the process of adding descriptive metadata (titles, descriptions, keywords) to various media files. It now supports multiple AI providers (Google Gemini, native OpenAI Responses, and OpenRouter routing to GPT-4.1/5, Claude, Grok, Llama 4, Gemini 2.5, and more) to analyze file content and suggest relevant metadata, which is then embedded directly into the files using the industry-standard ExifTool utility. This tool is particularly useful for photographers, videographers, graphic designers, and stock media contributors who need to manage and enrich large collections of digital assets efficiently.
 
 **Platform Support:**
 - 🟢 **Windows**: Full installer + source code support
@@ -21,19 +21,19 @@ RJ Auto Metadata is a powerful desktop application built with Python and CustomT
 ## 2. Core Features Detailed
 
 *   **AI-Powered Metadata Generation:**
-    *   Utilizes the Google Gemini API for content analysis and metadata suggestion.
+    *   Utilizes Google Gemini, OpenAI Responses, or OpenRouter (GPT, Claude, Grok, Llama 4, Gemini) for content analysis and metadata suggestion.
     *   Extracts meaningful titles, detailed descriptions, and relevant keywords based on visual or content analysis.
-    *   Handles API communication, including request formatting and response parsing (`src/api/gemini_api.py`).
+    *   Handles API communication, including request formatting and response parsing (`src/api/gemini_api.py`, `src/api/openai_api.py`, `src/api/openrouter_api.py`).
+*   **Multi-Provider Routing:**
+    *   Provider manager allows switching between Gemini, OpenAI, and OpenRouter from the UI.
+    *   Per-provider model catalogs mirror the latest public offerings, including Gemini 2.5/2.0, GPT-5/4.1, Claude 4.5/3.7, Grok 4, and Llama 4 Maverick/Scout.
+    *   API key storage, validation, and request scheduling respect the active provider (`src/api/provider_manager.py`).
 *   **Efficient Batch Processing:**
     *   Processes entire folders of files automatically.
     *   Uses a configurable number of parallel worker threads (`concurrent.futures.ThreadPoolExecutor`) for faster throughput (`src/processing/batch_processing.py`).
     *   **Thread-Safe Operations:** Supports high-concurrency processing (100+ workers, 1000+ files) with race condition prevention.
     *   **Auto Retry System:** Intelligent failure recovery that automatically retries failed files with configurable attempts per failure type (API errors: 5 attempts, file operations: 3 attempts). Includes real-time counter updates and smart retry timing.
-    *   **Smart Delay Override:** Prevents rate limit loops by automatically adjusting batch delays when all API keys are blacklisted (e.g., user delay 10s → 65s override) with multi-scenario support for single/multiple keys.
-    *   Smart API Key Selection. Intelligently selects the "most ready" API key for each request based on its current token bucket wait time and last usage, optimizing throughput and reducing immediate rate limit errors, rather than simple rotation. (`src/api/gemini_api.py`)
     *   Adaptive Inter-Batch Cooldown. Automatically adjusts the delay between processing batches. If a high percentage of API calls failed in the previous batch, the delay is temporarily increased (e.g., to 60 seconds) to allow API RPM to recover. Otherwise, the user-defined delay is used. (`src/processing/batch_processing.py`)
-    *   Fallback Model Mechanism. If an API call fails due to rate limits (429) after all main retries with the selected model, the application attempts one final call using the "most ready" model from a predefined fallback list, increasing the chances of successful metadata generation. This does not apply if "Auto Rotasi" is active for model selection. (`src/api/gemini_api.py`)
-    *   Includes configurable base delays between API requests per worker to manage API usage quotas (`src/api/rate_limiter.py`).
 *   **Broad File Format Compatibility:**
     *   **Images:** Processes standard formats like `.jpg`, `.jpeg`, `.png` directly (`src/processing/image_processing/`).
     *   **Vectors:** Handles `.ai`, `.eps`, and `.svg` files. Requires external tools (Ghostscript, GTK3 Runtime) for rendering/conversion before analysis (`src/processing/vector_processing/`).
@@ -50,9 +50,9 @@ RJ Auto Metadata is a powerful desktop application built with Python and CustomT
     *   **Thread-Safe CSV Export:** High-concurrency processing support with atomic operations to prevent data corruption.
 *   **Extensive Customization & Configuration:**
     *   **Folder Selection:** Dedicated input and output folder paths. Ensures input/output are distinct.
-    *   **API Key Management:** Text area for multiple Gemini API keys (one per line). Supports loading/saving keys to/from `.txt` files. Option to show/hide keys in the UI.
+    *   **API Key Management:** Text area for multiple API keys per provider (Gemini/OpenAI/OpenRouter) with automatic persistence and last-five-character masking. Supports loading/saving keys to/from `.txt` files. Option to show/hide keys in the UI.
     *   **API Key Paid Option:** New checkbox in the API Key section. If you have a paid Gemini API key, enable this option to allow the use of more workers than the number of API keys (removes the usual worker limit for free users). For free users, leave this unchecked to avoid hitting rate limits. **Note: Even with this option enabled, the maximum allowed workers is 100 for stability.**
-    *   **API Model Selection:** Choose a specific Gemini model (e.g., `gemini-2.0-flash`, `gemini-2.5-pro`) or use automatic rotation (`Auto Rotation`) via a dropdown.
+    *   **Provider & Model Selection:** Choose Gemini, OpenAI, or OpenRouter in the dropdown, then pick a specific model (e.g., `gemini-2.5-pro`, `openai/gpt-5`, `anthropic/claude-3.7-sonnet`). Gemini still supports automatic rotation (`Auto Rotation`).
     *   **Prompt Quality:** Select the desired trade-off between result detail and speed (`Detailed`, `Balanced`, `Less`) via a dropdown, using different underlying prompts.
         *   _Note:_ Prompt length affects API token usage. Longer prompts (`Detailed`) consume more input tokens per request, potentially hitting token limits (TPM/TPD) faster. Shorter prompts (`Less`) are more token-efficient.
     *   **Keyword Count:** Specify the maximum number of keywords to request from the API (min 8, max 49).
@@ -89,7 +89,7 @@ RJ Auto Metadata is a powerful desktop application built with Python and CustomT
 The application follows these general steps during processing:
 
 1.  **Initialization:** User launches the application (`main.py`), initializing the UI (`src/ui/app.py`). Settings load from `config.json`.
-2.  **Configuration:** User selects Input/Output folders, provides Gemini API keys, and adjusts processing options.
+2.  **Configuration:** User selects Input/Output folders, chooses an AI provider, supplies the corresponding API keys, and adjusts processing options.
 3.  **Start Process:** User clicks "Mulai Proses".
 4.  **Validation:** Application validates inputs (folders, keys, settings).
 5.  **File Discovery:** Scans the Input Folder for supported file types (`src/utils/file_utils.py`).
@@ -188,30 +188,28 @@ Follow these steps if you want to run the application directly using Python:
 
 ### 6.1. `config.json`
 
-Stores settings automatically (usually in `Documents/RJAutoMetadata` on Windows).
+Stores settings automatically (usually in `Documents/RJ Auto Metadata` on Windows).
 *   `input_dir`, `output_dir`: Folder paths.
 *   `delay`, `workers`: Performance settings.
 *   `rename`, `auto_kategori`, `auto_foldering`: File handling toggles (booleans).
-*   `api_keys`: List of your Gemini API keys.
-*   `show_api_keys`: UI visibility state (boolean).
-*   `model`: Selected API model (e.g., "gemini-2.0-flash", "Auto Rotation").
+*   `api_keys`: Stored per provider (Gemini, OpenAI, OpenRouter) as entered via the UI.
+*   `provider`: Last used provider (e.g., "Gemini", "OpenAI", "OpenRouter").
+*   `model`: Selected API model for the active provider (e.g., "gemini-2.5-pro", "openai/gpt-5").
 *   `priority`: Selected prompt priority ("Detailed", "Balanced", "Less").
 *   `keyword_count`: Maximum keywords requested (string, e.g., "49").
 *   `theme`: "light", "dark", or "system".
 *   `installation_id`: Anonymous analytics ID.
 *   `analytics_enabled`: Analytics toggle state.
-*   `api_key_paid`: (boolean) If true, disables the worker limit based on API key count (for paid API key users). **Maximum allowed workers is 100.**
 
 ### 6.2. UI Settings
 
 *   **Input/Output Folders:** Must be valid, different directories.
 *   **API Keys:** One key per line. Load/Save/Delete/Show-Hide options available.
-*   **API Key Paid?:** (Checkbox) If you have a paid Gemini API key, enable this to use more workers than the number of API keys. For free users, leave unchecked to avoid rate limits. **Maximum allowed workers is 100.**
 *   **Keywords:** Max keywords from API (8-49).
 *   **Workers:** Threads (1-10+). More workers = faster, but more API usage. (Paid users can use more workers by enabling the checkbox above, up to a maximum of 100.)
 *   **Delay (s):** Pause between API calls per worker (avoids rate limits).
 *   **Theme:** Visual style selection.
-*   **Models:** Select specific Gemini model or Auto Rotation.
+*   **Models:** Select specific models for request.
 *   **Quality:** Choose prompt detail level (Detailed/Balanced/Less).
 *   **Rename File?:** Renames output file to `Generated Title.ext`.
 *   **Auto Category?:** Applies experimental categories.
@@ -231,7 +229,7 @@ Stores settings automatically (usually in `Documents/RJAutoMetadata` on Windows)
     *   Use the desktop/start menu shortcut, which points to `RJ Auto Metadata.exe` (includes a console window that can be minimized/restored via the UI toggle).
     *   *Optional:* If you prefer no console window, navigate to the installation directory and run `RJ Auto Metadata No Console.exe` directly.
 2.  **Set Folders:** Use "Browse" for **Input** & **Output** directories (must be different!).
-3.  **Enter API Keys:** Paste keys (one per line) or use "Load". Manage with Save/Delete/Show-Hide.
+3.  **Enter API Keys:** Paste keys (one per line) or use "Load". 
 4.  **Adjust Settings (Optional):** Tune `Keywords`, `Workers`, `Delay`, `Theme`, `Models`, `Quality`, Toggles (`Rename?`, etc.).
 5.  **Initiate Processing:** Click **"Start Processing"**. Buttons will update state.
 6.  **Monitor:** Watch the **"Logs"** area for detailed steps, batch progress `(x/x)`, success/failure messages.
@@ -240,9 +238,13 @@ Stores settings automatically (usually in `Documents/RJAutoMetadata` on Windows)
 9.  **Clear Log (Optional):** Click **"Clear Log"** for a clean slate.
 10. **Exit:** Close window (settings save automatically).
 
-## 8. Gemini API Rate Limits (Free User)
+## 8. Provider Rate Limits
 
-When using the Google Gemini API, your usage is subject to several rate limits to ensure fair and stable access for all users. Exceeding any of these limits will result in a rate limit error from the API.
+Each provider enforces its own request and token quotas. Always size your worker count, delay, and key pool with these limits in mind to avoid repeated HTTP 429 responses.
+
+### 8.1. Google Gemini
+
+When using the Google Gemini API, usage is subject to several rate limits that apply per Google Cloud project. Exceeding any dimension will block further requests until the budget recovers.
 
 **Rate limits are measured across four main dimensions:**
 
@@ -251,20 +253,27 @@ When using the Google Gemini API, your usage is subject to several rate limits t
 - **Tokens per minute (TPM):** Maximum number of tokens processed per minute.
 - **Tokens per day (TPD):** Maximum number of tokens processed per day.
 
-Your usage is evaluated against each limit independently. If you exceed any one of them (for example, RPM), further requests will be blocked until your usage drops below the threshold, even if you have not reached the other limits. These limits are applied per project, not per API key.
+Each dimension is evaluated independently. If you exceed one (for example, RPM), further requests will be blocked even if the other limits are still available.
 
-**Limits vary by model and may change over time.** Here are some example limits:
+**Limits vary by model and may change over time.** Example (free tier) values:
 
 | Model                              | RPM | TPM      | RPD  |
-|-------------------------------------|-----|----------|------|
-| Gemini 2.5 Flash                    | 10  | 250,000  | 500  |
-| Gemini 2.5 Flash-Lite               | 15  | 250,000  | 500  |
-| Gemini 2.5 Pro                      | 5   | 250,000  | 25   |
-| Gemini 2.0 Flash                    | 15  | 1,000,000| 1,500|
-| Gemini 2.0 Flash-Lite               | 30  | 1,000,000| 1,500|
+|------------------------------------|-----|----------|------|
+| Gemini 2.5 Flash                   | 10  | 250,000  | 500  |
+| Gemini 2.5 Flash-Lite              | 15  | 250,000  | 500  |
+| Gemini 2.5 Pro                     | 5   | 250,000  | 25   |
+| Gemini 2.0 Flash                   | 15  | 1,000,000| 1,500|
+| Gemini 2.0 Flash-Lite              | 30  | 1,000,000| 1,500|
 
-> **Note:** Rate limits are more restrictive for experimental and preview models. Always refer to the [official Gemini API documentation](https://ai.google.dev/gemini-api/docs/rate-limits) for the most up-to-date information.
-> RJ Auto Metadata v3.1.0 and later include several internal mechanisms like Smart API Key Selection, Adaptive Inter-Batch Cooldown, and a Fallback Model system to help navigate these limits more effectively and improve processing resilience. However, respecting these limits by configuring appropriate worker counts and base delays remains crucial for sustained operation.
+> **Note:** Rate limits are stricter for experimental or preview models. Consult the [official Gemini API documentation](https://ai.google.dev/gemini-api/docs/rate-limits) for current quotas. RJ Auto Metadata includes Smart API Key Selection, Adaptive Inter-Batch Cooldown, and a fallback model system to help balance throughput, but configuring sensible worker counts and delays remains essential.
+
+### 8.2. OpenAI Responses
+
+OpenAI applies per-minute and per-day quotas that depend on your account tier and the specific model family (GPT-5 vs GPT-4.1 vs GPT-4o). Track your usage in the [OpenAI usage dashboard](https://platform.openai.com/usage) and review the [rate limit guide](https://platform.openai.com/docs/guides/rate-limits) for the latest allowances. RJ Auto Metadata respects the same retry/backoff logic used for Gemini but cannot override account-level caps.
+
+### 8.3. OpenRouter
+
+OpenRouter proxies multiple upstream providers. Your effective limits depend on both OpenRouter's own quotas and the limits imposed by the selected routed model (e.g., Anthropic, Google, xAI). Monitor usage through the [OpenRouter dashboard](https://openrouter.ai/dashboard) and consult the [OpenRouter rate limits article](https://openrouter.ai/docs/rate-limits). When possible, rotate multiple API keys or select models with more generous quotas to maintain throughput.
 
 ## 9. Supported File Formats
 
@@ -334,8 +343,6 @@ All CSV files are generated in your specified **Output Folder** and updated in r
 *   **Errors on `.svg` (Windows):**
     *   **Using Installer:** The GTK3 Runtime installation might have failed or been skipped during setup. Try running the GTK3 installer found within the application's temporary setup files (if available) or download and install it manually.
     *   **Running from Source:** GTK3 Runtime is missing or misconfigured. Install GTK3 Runtime.
-*   **API Errors (429, Auth):** Incorrect/inactive API key? Hitting rate limits? Check keys, increase `Delay`, reduce `Workers`, add more keys. Check internet.
-    *   *Note:* Version 3.1.0+ includes enhanced internal handling for rate limits (smart key selection, adaptive cooldown, fallback models), but user configuration for workers and base delay is still important.
 *   **Permission Errors:** Cannot write to Output Folder or config location? Choose different folder, check permissions.
 *   **Freezes/Crashes:** Review the GUI log carefully for any error messages. Since the terminal output is suppressed, the GUI log is the primary source of information. Ensure all dependencies (Python and external) are correctly installed. If the log provides no clues, consider system resource issues or try reducing the number of `Workers`.
 
@@ -343,13 +350,13 @@ All CSV files are generated in your specified **Output Folder** and updated in r
 
 *   `main.py`: Entry point.
 *   `src/`: Core logic.
-    *   `api/`: Gemini API interaction, rate limiting.
+    *   `api/`: API interactions.
     *   `config/`: Settings load/save.
     *   `metadata/`: ExifTool writing, categories.
     *   `processing/`: Batch logic, format handlers.
-    *   `ui/`: CustomTkinter GUI (`app.py`).
-    *   `utils/`: Helpers (files, logging, analytics).
-*   `tools/`: Bundled tools (ExifTool).
+    *   `ui/`: CustomTkinter GUI.
+    *   `utils/`: Helpers.
+*   `tools/`: Bundled tools.
 *   `assets/`: Icons, etc.
 *   `licenses/`: Dependency licenses.
 *   `sample_files/`: Test files.
@@ -370,7 +377,7 @@ This is currently a solo project and my first one! As such, I'm focusing on lear
 
 ## 15. Contact & Support
 
-You can find me and discuss this project (or others) at: https://s.id/rj_auto_metadata
+You can find me and discuss this project (or others) at: https://s.id/riiicil
 
 ## 16. Support the Project
 

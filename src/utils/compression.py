@@ -60,7 +60,7 @@ def get_temp_compression_folder(base_dir=None, output_dir=None):
 
 def compress_image(input_path, temp_folder=None, max_size_mb=MAX_IMAGE_SIZE_MB, quality=COMPRESSION_QUALITY, max_dimension=MAX_IMAGE_DIMENSION, stop_event=None):
     try:
-        if stop_event and stop_event.is_set() or is_stop_requested():
+        if (stop_event and stop_event.is_set()) or is_stop_requested():
             log_message("Compression cancelled due to stop request.")
             return input_path, False
 
@@ -77,7 +77,7 @@ def compress_image(input_path, temp_folder=None, max_size_mb=MAX_IMAGE_SIZE_MB, 
             os.makedirs(temp_folder, exist_ok=True)
             log_message(f"Compression folder created: {temp_folder}")
 
-        if stop_event and stop_event.is_set() or is_stop_requested():
+        if (stop_event and stop_event.is_set()) or is_stop_requested():
             log_message("Compression cancelled due to stop request.")
             return input_path, False
 
@@ -92,7 +92,7 @@ def compress_image(input_path, temp_folder=None, max_size_mb=MAX_IMAGE_SIZE_MB, 
                     log_message(f"No compression needed (size {file_size_mb:.2f}MB, {original_width}x{original_height}): {filename}")
                     return input_path, False
 
-                if stop_event and stop_event.is_set() or is_stop_requested():
+                if (stop_event and stop_event.is_set()) or is_stop_requested():
                     log_message("Compression cancelled due to stop request (after load image).")
                     return input_path, False
                 if needs_resize:
@@ -102,7 +102,7 @@ def compress_image(input_path, temp_folder=None, max_size_mb=MAX_IMAGE_SIZE_MB, 
                     if new_width != original_width or new_height != original_height:
                         img = img.resize((new_width, new_height), Image.LANCZOS)
 
-                if stop_event and stop_event.is_set() or is_stop_requested():
+                if (stop_event and stop_event.is_set()) or is_stop_requested():
                     log_message("Compression cancelled due to stop request (after resize).")
                     return input_path, False
 
@@ -111,7 +111,7 @@ def compress_image(input_path, temp_folder=None, max_size_mb=MAX_IMAGE_SIZE_MB, 
                 if ext_lower == '.png':
                     jpg_path = os.path.join(temp_folder, f"{base}_compressed.jpg")
 
-                    if stop_event and stop_event.is_set() or is_stop_requested():
+                    if (stop_event and stop_event.is_set()) or is_stop_requested():
                         log_message("Compression cancelled due to stop request (before conversion to JPG).")
                         return input_path, False
 
@@ -125,7 +125,7 @@ def compress_image(input_path, temp_folder=None, max_size_mb=MAX_IMAGE_SIZE_MB, 
                             img.convert('RGB').save(jpg_path, 'JPEG', quality=adaptive_quality, optimize=True)
 
                         if os.path.exists(jpg_path):
-                            if stop_event and stop_event.is_set() or is_stop_requested():
+                            if (stop_event and stop_event.is_set()) or is_stop_requested():
                                 try:
                                     if os.path.exists(jpg_path):
                                         os.remove(jpg_path)
@@ -157,14 +157,14 @@ def compress_image(input_path, temp_folder=None, max_size_mb=MAX_IMAGE_SIZE_MB, 
                 elif ext_lower in ['.jpg', '.jpeg']:
                     compressed_path = os.path.join(temp_folder, f"{base}_compressed{ext}")
 
-                    if stop_event and stop_event.is_set() or is_stop_requested():
+                    if (stop_event and stop_event.is_set()) or is_stop_requested():
                         log_message("Compression cancelled due to stop request (before JPG compression).")
                         return input_path, False
 
                     try:
                         img.save(compressed_path, 'JPEG', quality=adaptive_quality, optimize=True)
 
-                        if stop_event and stop_event.is_set() or is_stop_requested():
+                        if (stop_event and stop_event.is_set()) or is_stop_requested():
                             try:
                                 if os.path.exists(compressed_path):
                                     os.remove(compressed_path)

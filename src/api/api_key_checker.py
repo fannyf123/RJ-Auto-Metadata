@@ -1,44 +1,22 @@
-import requests
-from .gemini_api import get_api_endpoint, DEFAULT_MODEL
+# RJ Auto Metadata
+# Copyright (C) 2025 Riiicil
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-def check_api_keys_status(api_keys, model=None):
-    results = {}
-    model_to_use = model or DEFAULT_MODEL
-    api_endpoint = get_api_endpoint(model_to_use)
-    headers = {"Content-Type": "application/json"}
-    payload = {
-        "contents": [
-            {"role": "user", "parts": [
-                {"text": "Test API key status only. Ignore this request."}
-            ]}
-        ],
-        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 8},
-        "safetySettings": [
-            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"}
-        ]
-    }
-    for key in api_keys:
-        api_url = f"{api_endpoint}?key={key}"
-        try:
-            resp = requests.post(api_url, headers=headers, json=payload, timeout=20)
-            try:
-                resp_json = resp.json()
-            except Exception:
-                resp_json = resp.text
-            if resp.status_code == 200:
-                results[key] = (200, "OK")
-            else:
-                if isinstance(resp_json, dict):
-                    msg = resp_json.get('error', resp_json)
-                    if isinstance(msg, dict):
-                        msg = msg.get('message', str(msg))
-                else:
-                    msg = str(resp_json)
-                msg = str(msg)[:60]
-                results[key] = (resp.status_code, msg)
-        except Exception as e:
-            results[key] = (-1, str(e)[:60])
-    return results 
+# src/api/api_key_checker.py
+from src.api.provider_manager import (check_api_keys_status as provider_check_api_keys_status,get_default_provider,)
+
+def check_api_keys_status(api_keys, model=None, provider=None):
+    provider_name = provider or get_default_provider()
+    return provider_check_api_keys_status(provider_name, api_keys, model=model)

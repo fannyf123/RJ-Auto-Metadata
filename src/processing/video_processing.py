@@ -19,14 +19,15 @@ import os
 import time
 import shutil
 import cv2
-from src.utils.logging import log_message
-from src.api.gemini_api import check_stop_event, get_gemini_metadata
-from src.utils.compression import compress_image, get_temp_compression_folder
-from src.metadata.exif_writer import write_exif_to_video # Corrected import
-from src.metadata.csv_exporter import write_to_platform_csvs
-from src.utils.file_utils import WRITABLE_METADATA_VIDEO_EXTENSIONS # Import the constant
 
-def extract_frames_from_video(video_path, output_folder, num_frames=3, stop_event=None):
+from src.api import provider_manager
+from src.metadata.csv_exporter import write_to_platform_csvs
+from src.metadata.exif_writer import write_exif_to_video  # Corrected import
+from src.utils.compression import compress_image, get_temp_compression_folder
+from src.utils.file_utils import WRITABLE_METADATA_VIDEO_EXTENSIONS  # Import the constant
+from src.utils.logging import log_message
+
+def extract_frames_from_video(video_path, output_folder, provider_name, num_frames=3, stop_event=None):
     filename = os.path.basename(video_path)
     log_message(f"Extracting {num_frames} frames from video: {filename}")
 
@@ -73,7 +74,7 @@ def extract_frames_from_video(video_path, output_folder, num_frames=3, stop_even
 
         extracted_frames = []
         for i, pos in enumerate(frame_positions):
-            if check_stop_event(stop_event, f"Extraction of frame cancelled: {filename}"):
+            if provider_manager.check_stop_event(provider_name, stop_event, f"Extraction of frame cancelled: {filename}"):
                 for frame_path in extracted_frames:
                     try:
                         if os.path.exists(frame_path):
@@ -112,7 +113,18 @@ def extract_frames_from_video(video_path, output_folder, num_frames=3, stop_even
         log_message(f"Detail error: {traceback.format_exc()}")
         return None
 
-def process_video(input_path, output_dir, selected_api_key: str, stop_event, auto_kategori_enabled=True, selected_model=None, embedding_enabled=True, keyword_count="49", priority="Details"):
+def process_video(
+    input_path,
+    output_dir,
+    selected_api_key: str,
+    stop_event,
+    provider_name: str,
+    auto_kategori_enabled=True,
+    selected_model=None,
+    embedding_enabled=True,
+    keyword_count="49",
+    priority="Details",
+):
     filename = os.path.basename(input_path)
     _, ext = os.path.splitext(filename)
     ext_lower = ext.lower()
@@ -120,7 +132,7 @@ def process_video(input_path, output_dir, selected_api_key: str, stop_event, aut
     extracted_frames = []
     compressed_frames_to_clean = []
 
-    if check_stop_event(stop_event):
+    if provider_manager.check_stop_event(provider_name, stop_event):
         return "stopped", None, None
 
     if os.path.exists(initial_output_path):
@@ -132,7 +144,13 @@ def process_video(input_path, output_dir, selected_api_key: str, stop_event, aut
         return "failed_unknown", None, None
 
     try:
-        extracted_frames = extract_frames_from_video(input_path, chosen_temp_folder, num_frames=3, stop_event=stop_event)
+        extracted_frames = extract_frames_from_video(
+            input_path,
+            chosen_temp_folder,
+            provider_name,
+            num_frames=3,
+            stop_event=stop_event,
+        )
         if not extracted_frames:
             log_message(f"Failed to extract frames from video: {filename}")
             return "failed_frames", None, None
@@ -140,7 +158,7 @@ def process_video(input_path, output_dir, selected_api_key: str, stop_event, aut
         log_message(f"Error when extracting frames: {e}")
         return "failed_frames", None, None
 
-    if check_stop_event(stop_event):
+    if provider_manager.check_stop_event(provider_name, stop_event):
         for frame in extracted_frames:
             try:
                 if os.path.exists(frame): os.remove(frame)
@@ -169,9 +187,10 @@ def process_video(input_path, output_dir, selected_api_key: str, stop_event, aut
              log_message(f"Error when compressing frame {frame_filename}: {e_comp}")
              frames_for_api.append(frame_path)
 
-        if check_stop_event(stop_event): break
+        if provider_manager.check_stop_event(provider_name, stop_event):
+            break
 
-    if check_stop_event(stop_event):
+    if provider_manager.check_stop_event(provider_name, stop_event):
         for frame in extracted_frames + compressed_frames_to_clean:
             try:
                 if os.path.exists(frame): os.remove(frame)
@@ -193,7 +212,17 @@ def process_video(input_path, output_dir, selected_api_key: str, stop_event, aut
                  if os.path.exists(frame): os.remove(frame)
              except Exception: pass
         return "failed_frames", None, None
-    metadata_result = get_gemini_metadata(frames_for_api, selected_api_key, stop_event, use_video_prompt=True, selected_model_input=selected_model, keyword_count=keyword_count, priority=priority)
+    metadata_result = provider_manager.get_metadata(
+        provider_name,
+        frames_for_api,
+        selected_api_key,
+        stop_event,
+        use_video_prompt=True,
+        selected_model=selected_model,
+        keyword_count=keyword_count,
+        priority=priority,
+        is_vector_conversion=False,
+    )
 
     all_frames_to_clean = list(set(extracted_frames + compressed_frames_to_clean))
     for frame in all_frames_to_clean:
@@ -215,7 +244,7 @@ def process_video(input_path, output_dir, selected_api_key: str, stop_event, aut
         log_message(f"API call failed to get metadata (result is invalid).")
         return "failed_api", None, None
 
-    if check_stop_event(stop_event):
+    if provider_manager.check_stop_event(provider_name, stop_event):
         return "stopped", metadata, None
 
     try:
@@ -229,7 +258,7 @@ def process_video(input_path, output_dir, selected_api_key: str, stop_event, aut
         log_message(f"Failed to copy {filename}: {e}")
         return "failed_copy", metadata, None
 
-    if check_stop_event(stop_event):
+    if provider_manager.check_stop_event(provider_name, stop_event):
         try:
             if os.path.exists(output_path): os.remove(output_path)
         except Exception: pass

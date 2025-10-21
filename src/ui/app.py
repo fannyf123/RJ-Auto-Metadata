@@ -30,7 +30,6 @@ import webbrowser
 import tkinter as tk
 import tkinter.messagebox
 import customtkinter as ctk
-import importlib
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from src.utils.logging import log_message
@@ -38,16 +37,14 @@ from src.utils.file_utils import read_api_keys, is_writable_directory
 from src.utils.analytics import send_analytics_event
 from src.config.config import MEASUREMENT_ID, API_SECRET, ANALYTICS_URL
 from src.processing.batch_processing import batch_process_files
+from src.api import provider_manager
 from src.ui.widgets import ToolTip
 from src.ui.dialogs import CompletionMessageManager
-from src.utils.system_checks import (
-    check_ghostscript, check_ffmpeg, check_gtk_dependencies,
-    set_console_visibility
-)
+from src.utils.system_checks import (check_ghostscript, check_ffmpeg, check_gtk_dependencies,set_console_visibility)
 from src.metadata.exif_writer import check_exiftool_exists
 from src.api.api_key_checker import check_api_keys_status
 
-APP_VERSION = "3.9.3"
+APP_VERSION = "3.10.0"
 CONFIG_FILE = "config.json"
 
 class MetadataApp(ctk.CTk):
@@ -78,6 +75,15 @@ class MetadataApp(ctk.CTk):
 
         self.start_time = None
         self.processing_thread = None
+        self.selected_provider = provider_manager.get_default_provider()
+        self.available_providers = provider_manager.list_providers()
+        if not self.available_providers:
+            self.available_providers = [self.selected_provider]
+        if self.selected_provider not in self.available_providers:
+            self.selected_provider = self.available_providers[0]
+        self.api_keys_by_provider = {name: [] for name in self.available_providers}
+        self.provider_var = tk.StringVar(value=self.selected_provider)
+        self._actual_api_keys = list(self.api_keys_by_provider.get(self.selected_provider, []))
         self.stop_event = threading.Event()
         self.log_queue = queue.Queue()
         self._log_queue_after_id = None
@@ -113,9 +119,7 @@ class MetadataApp(ctk.CTk):
         self.rename_files_var = tk.BooleanVar(value=False)
         self.delay_var = tk.StringVar(value="10")
         self.workers_var = tk.StringVar(value="1")
-        self._actual_api_keys = []
-        # Removed show_api_keys_var - API keys now auto-hide by default
-        self.extra_settings_var = tk.BooleanVar(value=False)  # API Key Paid toggle
+        self.extra_settings_var = tk.BooleanVar(value=False) 
         self.console_visible_var = tk.BooleanVar(value=True)
 
         self.processed_count = 0
@@ -142,13 +146,11 @@ class MetadataApp(ctk.CTk):
         self.auto_retry_var = tk.BooleanVar(value=False)
         self._needs_initial_save = False
 
-        try:
-            gemini_api = importlib.import_module('src.api.gemini_api')
-            gemini_models = list(getattr(gemini_api, 'GEMINI_MODELS', []))
-        except Exception:
-            gemini_models = []
-        self.available_models = ["Auto Rotation"] + [m for m in gemini_models if m not in ("Auto Rotation",)]
-        self.model_var = tk.StringVar(value="Auto Rotation")
+        self.available_models = provider_manager.get_model_choices(self.selected_provider)
+        default_model = provider_manager.get_default_model(self.selected_provider)
+        if default_model not in self.available_models and self.available_models:
+            default_model = self.available_models[0]
+        self.model_var = tk.StringVar(value=default_model)
         self.keyword_count_var = tk.StringVar(value="49")
         self.priority_var = tk.StringVar(value="Detailed")
         
@@ -313,14 +315,15 @@ Images from input folder will be processed with API, then copied to output folde
     
 
     def _cek_api_keys(self):
-        api_keys = self._actual_api_keys
+        api_keys = self._get_keys_from_textbox()
         if not api_keys:
             self._log("No API key to check.", "warning")
             return
         self.cek_api_button.configure(state=tk.DISABLED)
         self._log("Checking status of all API keys...", "info")
         try:
-            results = check_api_keys_status(api_keys)
+            provider_name = self.provider_var.get() if hasattr(self, "provider_var") else self.selected_provider
+            results = check_api_keys_status(api_keys, model=self.model_var.get(), provider=provider_name)
             ok_keys = [k for k, (s, msg) in results.items() if s == 200]
             err_keys = [(k, s, msg) for k, (s, msg) in results.items() if s != 200]
             if len(ok_keys) == len(api_keys):
@@ -350,7 +353,6 @@ Configuration of application behavior:
 • Keywords: Number of keywords/tags taken from API results (min 8, max 49)
 • Workers: Number of parallel threads for processing files (e.g. 1-10)
 • Delay (s): Time delay (seconds) between API requests
-• API Key Paid?: Check if you have paid for the API key
 • Auto Retry?: Check if you want to retry failed files
 • Auto Category?: Check if you want to auto category the files
 • Auto Foldering?: Check if you want to auto folder the files
@@ -390,12 +392,19 @@ Configuration of application behavior:
         self.delete_api_button = ctk.CTkButton(api_buttons2, text="Delete", width=60, command=self._delete_selected_api_key, fg_color="#079183", height=35)
         self.delete_api_button.pack(pady=5, fill=tk.BOTH)
         
-        # API Key Paid checkbox - centered between Load/Delete buttons
+        # Provider selection dropdown (takes former API-paid slot)
         api_paid_frame = ctk.CTkFrame(api_section, fg_color="transparent")
         api_paid_frame.grid(row=1, column=1, columnspan=2, padx=7, pady=10, sticky="sew")
-        
-        self.api_key_paid_checkbox = ctk.CTkCheckBox(api_paid_frame, text="API Key Paid?", variable=self.extra_settings_var, font=self.font_normal)
-        self.api_key_paid_checkbox.pack(anchor="center", pady=10)
+
+        self.provider_dropdown = ctk.CTkComboBox(
+            api_paid_frame,
+            values=self.available_providers,
+            variable=self.provider_var,
+            command=self._on_provider_change,
+            justify='center'
+        )
+        self.provider_dropdown.pack(anchor="center", pady=10, fill=tk.X)
+        self.provider_dropdown.set(self.provider_var.get())
         
         # Process Control Buttons
         process_buttons = ctk.CTkFrame(api_section, fg_color="transparent")
@@ -699,7 +708,9 @@ Configuration of application behavior:
         try:
             keys = read_api_keys(filepath)
             if keys:
-                self._actual_api_keys = keys
+                self._actual_api_keys = list(keys)
+                self._ensure_provider_entry(self.selected_provider)
+                self._persist_current_provider_keys()
                 self._update_api_textbox_with_autohide()
                 self._log(f"Successfully loaded {len(keys)} API key", "success")
             else:
@@ -793,6 +804,7 @@ Configuration of application behavior:
         try:
             del self._actual_api_keys[start_line_idx : end_line_idx + 1]
             self._log(f"{num_keys_to_delete} API keys deleted from internal list (line {start_line_idx+1} - {end_line_idx+1}).", "info")
+            self._persist_current_provider_keys()
             self._update_api_textbox_with_autohide()
         except IndexError:
             self._log("Error: Index out of range when deleting key from internal list.", "error")
@@ -832,6 +844,9 @@ Configuration of application behavior:
                 # Auto-hide display after typing
                 self.after(500, self._update_api_textbox_with_autohide)
             
+            self._ensure_provider_entry(self.selected_provider)
+            self._persist_current_provider_keys()
+
         except tk.TclError:
             pass
         except Exception as e:
@@ -864,8 +879,59 @@ Configuration of application behavior:
         except Exception as e:
             self._log(f"Error updating API textbox: {e}", "error")
     
+    def _ensure_provider_entry(self, provider_name):
+        if not provider_name:
+            return
+        if provider_name not in self.api_keys_by_provider:
+            self.api_keys_by_provider[provider_name] = []
+
+    def _persist_current_provider_keys(self):
+        provider_name = self.selected_provider or (self.provider_var.get() if hasattr(self, "provider_var") else None)
+        if not provider_name:
+            return
+        self._ensure_provider_entry(provider_name)
+        self.api_keys_by_provider[provider_name] = list(self._actual_api_keys)
+
+    def _load_provider_keys(self, provider_name):
+        self._ensure_provider_entry(provider_name)
+        self._actual_api_keys = list(self.api_keys_by_provider.get(provider_name, []))
+        self._update_api_textbox_with_autohide()
+
+    def _refresh_provider_models(self, provider_name):
+        models = provider_manager.get_model_choices(provider_name)
+        self.available_models = list(models)
+        current_model = self.model_var.get() if hasattr(self, "model_var") else None
+        if current_model not in self.available_models:
+            fallback_model = provider_manager.get_default_model(provider_name)
+            if fallback_model not in self.available_models and self.available_models:
+                fallback_model = self.available_models[0]
+            current_model = fallback_model
+            if hasattr(self, "model_var"):
+                self.model_var.set(current_model)
+        if hasattr(self, "model_dropdown"):
+            self.model_dropdown.configure(values=self.available_models)
+            if current_model:
+                self.model_dropdown.set(current_model)
+
     def _toggle_api_key_visibility(self):
         pass
+
+
+    def _on_provider_change(self, value):
+        provider = value or provider_manager.get_default_provider()
+        if provider not in self.available_providers:
+            provider = self.available_providers[0]
+        if provider == self.selected_provider:
+            return
+        self._persist_current_provider_keys()
+        self.selected_provider = provider
+        self.provider_var.set(provider)
+        self._load_provider_keys(provider)
+        self._refresh_provider_models(provider)
+        try:
+            self._save_settings()
+        except Exception:
+            pass
 
 
     def _update_api_textbox(self):
@@ -902,7 +968,11 @@ Configuration of application behavior:
 
     def _get_keys_from_textbox(self):
         self._sync_actual_keys_from_textbox()
-        return self._actual_api_keys
+        self._persist_current_provider_keys()
+        provider_name = self.selected_provider or (self.provider_var.get() if hasattr(self, "provider_var") else None)
+        if not provider_name:
+            return []
+        return list(self.api_keys_by_provider.get(provider_name, []))
 
     def _sync_actual_keys_from_textbox(self, event=None):
         """Redirect to new auto-hide method for backward compatibility"""
@@ -954,10 +1024,37 @@ Configuration of application behavior:
                         self.auto_kategori_var.set(settings.get("auto_kategori", True))
                         self.auto_foldering_var.set(settings.get("auto_foldering", False))
                         self.auto_retry_var.set(settings.get("auto_retry", False))
-                        self._actual_api_keys = settings.get("api_keys", [])
                         # show_api_keys_var removed - API keys now auto-hide by default
                         self.console_visible_var.set(settings.get("console_visible", True))
                         self.extra_settings_var.set(settings.get("api_key_paid", False))
+
+                        stored_keys_map = settings.get("api_keys_by_provider", {})
+                        if isinstance(stored_keys_map, dict):
+                            for provider_name, keys in stored_keys_map.items():
+                                if isinstance(keys, list):
+                                    self.api_keys_by_provider[provider_name] = list(keys)
+
+                        for provider_name in self.available_providers:
+                            self._ensure_provider_entry(provider_name)
+
+                        loaded_provider = settings.get("provider", self.selected_provider)
+                        if loaded_provider not in self.available_providers:
+                            loaded_provider = self.available_providers[0]
+                        self.selected_provider = loaded_provider
+                        self.provider_var.set(loaded_provider)
+                        if hasattr(self, "provider_dropdown"):
+                            try:
+                                self.provider_dropdown.set(loaded_provider)
+                            except Exception:
+                                pass
+
+                        fallback_keys = settings.get("api_keys", [])
+                        if isinstance(fallback_keys, list) and fallback_keys:
+                            self._ensure_provider_entry(self.selected_provider)
+                            if not self.api_keys_by_provider.get(self.selected_provider):
+                                self.api_keys_by_provider[self.selected_provider] = list(fallback_keys)
+
+                        self._load_provider_keys(self.selected_provider)
 
                         loaded_theme = settings.get("theme", "dark")
                         self.theme_var.set(loaded_theme)
@@ -970,7 +1067,6 @@ Configuration of application behavior:
                         else:
                               self._log("Installation ID not found in config.", "info")
 
-                        self._update_api_textbox_with_autohide()
                         self._log("Other settings loaded from configuration", "info")
 
                         if platform.system() == "Windows":
@@ -979,19 +1075,14 @@ Configuration of application behavior:
                              set_console_visibility(initial_console_state)
                              self.after(50, self._update_console_toggle_text)
 
-                        self.model_var.set(settings.get("model", "Auto Rotation"))
+                        stored_model = settings.get("model")
+                        if stored_model:
+                            self.model_var.set(stored_model)
                         self.keyword_count_var.set(str(settings.get("keyword_count", "49")))
                         self.priority_var.set(settings.get("priority", "Detailed"))
                         self.embedding_var.set(settings.get("embedding", "Enable"))
-                        self.available_models = [
-                            "Auto Rotation",
-                            "gemini-2.0-flash",
-                            "gemini-2.0-flash-lite",
-                            "gemini-2.5-flash",
-                            "gemini-2.5-flash-lite",
-                            "gemini-2.5-pro"
-                        ]
                         self.available_priorities = ["Detailed", "Balanced", "Less"]
+                        self._refresh_provider_models(self.selected_provider)
 
                 except Exception as inner_e:
                     self._log(f"Error loading configuration file: {inner_e}", "error")
@@ -1010,6 +1101,10 @@ Configuration of application behavior:
 
     def _save_settings(self):
         self._sync_actual_keys_from_textbox()
+        self._persist_current_provider_keys()
+        provider_name = self.provider_var.get() if hasattr(self, "provider_var") else self.selected_provider
+        self._ensure_provider_entry(provider_name)
+        current_api_keys = list(self.api_keys_by_provider.get(provider_name, []))
 
         settings = {
             "config_version": "1.0",
@@ -1021,7 +1116,7 @@ Configuration of application behavior:
             "auto_kategori": self.auto_kategori_var.get(),
             "auto_foldering": self.auto_foldering_var.get(),
             "auto_retry": self.auto_retry_var.get(),
-            "api_keys": self._actual_api_keys,
+            "api_keys": current_api_keys,
             # "show_api_keys" removed - API keys now auto-hide by default
             "console_visible": self.console_visible_var.get(),
             "theme": self.theme_var.get(),
@@ -1033,6 +1128,8 @@ Configuration of application behavior:
             "priority": self.priority_var.get(),
             "embedding": self.embedding_var.get(),
             "api_key_paid": self.extra_settings_var.get(),
+            "provider": self.provider_var.get() if hasattr(self, "provider_var") else self.selected_provider,
+            "api_keys_by_provider": {name: list(keys) for name, keys in self.api_keys_by_provider.items()},
         }
 
         try:
@@ -1208,14 +1305,11 @@ Configuration of application behavior:
                 self.workers_var.set("3")
                 num_workers = 3
         else:
-            num_api_keys = len(current_api_keys)
-            max_workers = 25
+            max_workers = 100
             try:
                 num_workers = int(self.workers_var.get().strip() or "3")
                 if num_workers <= 0:
                     num_workers = 1
-                elif num_workers > num_api_keys:
-                    num_workers = num_api_keys
                 elif num_workers > max_workers:
                     num_workers = max_workers
                 self.workers_var.set(str(num_workers))
@@ -1295,7 +1389,8 @@ Configuration of application behavior:
         self.delete_api_button.configure(state=tk.DISABLED)
         self.input_button.configure(state=tk.DISABLED)
         self.output_button.configure(state=tk.DISABLED)
-        self.api_key_paid_checkbox.configure(state=tk.DISABLED)
+        if hasattr(self, "provider_dropdown"):
+            self.provider_dropdown.configure(state=tk.DISABLED)
 
     def _run_processing(self, input_dir, output_dir, api_keys, rename_enabled, delay_seconds, num_workers, auto_kategori_enabled, auto_foldering_enabled, selected_model=None, keyword_count="49", priority="Details", bypass_api_key_limit=False):
         from src.utils.system_checks import GHOSTSCRIPT_PATH as gs_path_found
@@ -1304,10 +1399,16 @@ Configuration of application behavior:
             embedding_enabled = self.embedding_var.get() == "Enable"
             auto_retry_enabled = self.auto_retry_var.get()
             
+            provider_name = self.provider_var.get() if hasattr(self, "provider_var") else provider_manager.get_default_provider()
+            if provider_name not in self.available_providers:
+                provider_name = provider_manager.get_default_provider()
+            self.selected_provider = provider_name
+
             result = batch_process_files(
                 input_dir=input_dir,
                 output_dir=output_dir,
                 api_keys=api_keys,
+                provider_name=provider_name,
                 ghostscript_path=gs_path_found,
                 rename_enabled=rename_enabled,
                 delay_seconds=delay_seconds,
@@ -1380,8 +1481,8 @@ Configuration of application behavior:
                 self._log("Received stop request...", "warning")
                 self.stop_event.set()
 
-                from src.api.gemini_api import set_force_stop
-                set_force_stop()
+                from src.api import provider_manager
+                provider_manager.set_force_stop()
 
                 self.stop_button.configure(state=tk.DISABLED, text="Stopping...")
                 self._stop_request_time = time.monotonic()
@@ -1458,7 +1559,8 @@ Configuration of application behavior:
             self.delete_api_button.configure(state=tk.NORMAL)
             self.input_button.configure(state=tk.NORMAL)
             self.output_button.configure(state=tk.NORMAL)
-            self.api_key_paid_checkbox.configure(state=tk.NORMAL)
+            if hasattr(self, "provider_dropdown"):
+                self.provider_dropdown.configure(state=tk.NORMAL)
         except Exception as e:
             print(f"Error when resetting UI: {e}")
             import traceback

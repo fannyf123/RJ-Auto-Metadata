@@ -17,18 +17,30 @@
 # src/processing/image_processing/format_png_processing.py
 import os
 import shutil
-from src.utils.logging import log_message
-from src.api.gemini_api import check_stop_event, is_stop_requested
-from src.utils.compression import compress_image, get_temp_compression_folder
-from src.api.gemini_api import get_gemini_metadata
-from src.metadata.csv_exporter import write_to_platform_csvs
 
-def process_png(input_path, output_dir, selected_api_key: str, stop_event, auto_kategori_enabled=True, selected_model=None, embedding_enabled=True, keyword_count="49", priority="Details"):
+from src.api import provider_manager
+from src.metadata.csv_exporter import write_to_platform_csvs
+from src.utils.compression import compress_image, get_temp_compression_folder
+from src.utils.logging import log_message
+
+
+def process_png(
+    input_path,
+    output_dir,
+    selected_api_key: str,
+    stop_event,
+    provider_name: str,
+    auto_kategori_enabled=True,
+    selected_model=None,
+    embedding_enabled=True,
+    keyword_count="49",
+    priority="Details",
+):
     filename = os.path.basename(input_path)
     initial_output_path = os.path.join(output_dir, filename)
     temp_files_created = []
     
-    if check_stop_event(stop_event): 
+    if provider_manager.check_stop_event(provider_name, stop_event): 
         return "stopped", None, None
     
     if os.path.exists(initial_output_path):
@@ -54,7 +66,7 @@ def process_png(input_path, output_dir, selected_api_key: str, stop_event, auto_
         log_message(f"Error checking file size/compression: {e}")
         path_for_api = input_path
     
-    if check_stop_event(stop_event):
+    if provider_manager.check_stop_event(provider_name, stop_event):
         for temp_file in temp_files_created:
             try:
                 if os.path.exists(temp_file):
@@ -64,7 +76,17 @@ def process_png(input_path, output_dir, selected_api_key: str, stop_event, auto_
         return "stopped", None, None
     
     api_key_to_use = selected_api_key
-    metadata_result = get_gemini_metadata(path_for_api, api_key_to_use, stop_event, use_png_prompt=True, selected_model_input=selected_model, keyword_count=keyword_count, priority=priority)
+    metadata_result = provider_manager.get_metadata(
+        provider_name,
+        path_for_api,
+        api_key_to_use,
+        stop_event,
+        use_png_prompt=True,
+        selected_model=selected_model,
+        keyword_count=keyword_count,
+        priority=priority,
+        is_vector_conversion=False,
+    )
     
     for temp_file in temp_files_created:
         try:
@@ -85,7 +107,7 @@ def process_png(input_path, output_dir, selected_api_key: str, stop_event, auto_
         log_message(f"API call failed to get metadata (invalid result).")
         return "failed_api", None, None
     
-    if check_stop_event(stop_event):
+    if provider_manager.check_stop_event(provider_name, stop_event):
         return "stopped", metadata, None
     
     try:
@@ -98,7 +120,7 @@ def process_png(input_path, output_dir, selected_api_key: str, stop_event, auto_
         log_message(f"Failed to copy {filename}: {e}")
         return "failed_copy", metadata, None
     
-    if check_stop_event(stop_event):
+    if provider_manager.check_stop_event(provider_name, stop_event):
         try: os.remove(initial_output_path)
         except Exception: pass
         return "stopped", metadata, None

@@ -33,7 +33,7 @@ try:
     GENAI_SDK_AVAILABLE = True
 except ImportError:
     GENAI_SDK_AVAILABLE = False
-from src.api.gemini_prompts import (
+from src.api.prompts import (
     PROMPT_TEXT, PROMPT_TEXT_PNG, PROMPT_TEXT_VIDEO,
     PROMPT_TEXT_BALANCED, PROMPT_TEXT_PNG_BALANCED, PROMPT_TEXT_VIDEO_BALANCED,
     PROMPT_TEXT_FAST, PROMPT_TEXT_PNG_FAST, PROMPT_TEXT_VIDEO_FAST
@@ -765,7 +765,7 @@ def get_gemini_metadata(image_path, api_key, stop_event, use_png_prompt=False, u
             if http_status == 429 or (response_data and response_data.get("error", {}).get("code") == 429):
                 log_message(f"Rate limit from API for model {model_for_this_attempt} / API key ...{api_key[-5:]} on {image_basename}: {api_error_msg}", "warning")
                 if not is_auto_rotate_mode:
-                    log_message(f"Warning: The model you selected ({model_for_this_attempt}) is reaching the quota limit. Try using a different model or Auto Rotation mode.", "warning")
+                    log_message(f"Warning: The model you selected ({model_for_this_attempt}) is reaching the quota limit. Try using a different model.", "warning")
             else:
                 log_message(f"API error (HTTP {http_status}) for {image_basename} with {model_for_this_attempt}: {api_error_msg}. No retry.", "error")
                 return {"error": f"{api_error_msg} (HTTP {http_status}, Model {model_for_this_attempt})"}

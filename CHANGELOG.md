@@ -16,6 +16,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 -
 
+## [3.10.0] - 2025-10-19
+
+### Added
+- **OpenAI Responses provider:** Native integration with OpenAI's Responses API (`src/api/openai_api.py`), including model presets for GPT-5, GPT-4.1, and GPT-4o families plus reasoning controls for GPT-5 tiers.
+- **OpenRouter provider:** New OpenRouter client (`src/api/openrouter_api.py`) hitting the `/chat/completions` endpoint with curated presets for GPT-5/4.1, Gemini 2.5/2.0, Claude 4.5/3.7, Grok 4, and Llama 4 Maverick/Scout models.
+- **Provider-aware manager:** Extended `src/api/provider_manager.py` so the UI can switch between Gemini, OpenAI, and OpenRouter, including API key selection, metadata routing, and status checks.
+- **Config & key storage:** Persist API keys per provider, remember the last-used provider/model, and expose provider-specific model lists inside the UI dropdowns.
+
+### Changed
+- **UI workflow:** Provider dropdown now precedes model selection; API key textbox masks and stores keys independently for each provider; workflow descriptions updated to cover multi-provider usage.
+- **Documentation:** README now details the multi-provider architecture, provider-model catalogs, configuration changes, and OpenRouter usage guidance.
+- **Structured-output handling:** Updated structured-output detection logic to accommodate chat-completions responses (OpenRouter) and ensure JSON parsing across all providers.
+
+### Fixed
+- Hardened error logging for OpenRouter (detailed HTTP 400 diagnostics) and unified response parsing with fallbacks for JSON object, text payload, and tool-call argument formats.
+- Normalized token accounting fields when switching between Responses (`usage.output_tokens`) and Chat Completions (`usage.completion_tokens`) payloads to avoid misreported token warnings.
+
 ## [3.9.3] - 2025-09-28
 
 ### Changed
