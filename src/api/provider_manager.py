@@ -19,12 +19,13 @@ from __future__ import annotations
 
 from typing import Iterable, List, Optional
 
-from src.api import gemini_api, openai_api, openrouter_api
+from src.api import gemini_api, openai_api, openrouter_api, groq_api
 from src.utils.logging import log_message
 
 PROVIDER_GEMINI = "Gemini"
 PROVIDER_OPENAI = "OpenAI"
 PROVIDER_OPENROUTER = "OpenRouter"
+PROVIDER_GROQ = "Groq"
 _DEFAULT_PROVIDER = PROVIDER_GEMINI
 
 _PROVIDERS = {
@@ -45,6 +46,12 @@ _PROVIDERS = {
         "models": list(openrouter_api.OPENROUTER_MODELS),
         "supports_auto_rotation": False,
         "default_model": openrouter_api.DEFAULT_MODEL,
+    },
+    PROVIDER_GROQ: {
+        "module": groq_api,
+        "models": list(groq_api.GROQ_MODELS),
+        "supports_auto_rotation": False,
+        "default_model": groq_api.DEFAULT_MODEL,
     },
 }
 
@@ -118,6 +125,18 @@ def get_metadata(
         )
     if provider_key == PROVIDER_OPENROUTER:
         return module.get_openrouter_metadata(
+            image_path,
+            api_key,
+            stop_event,
+            use_png_prompt=use_png_prompt,
+            use_video_prompt=use_video_prompt,
+            selected_model_input=effective_model,
+            keyword_count=keyword_count,
+            priority=priority,
+            is_vector_conversion=is_vector_conversion,
+        )
+    if provider_key == PROVIDER_GROQ:
+        return module.get_groq_metadata(
             image_path,
             api_key,
             stop_event,

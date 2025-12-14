@@ -11,7 +11,7 @@
 
 ## 1. Introduction
 
-RJ Auto Metadata is a powerful desktop application built with Python and CustomTkinter, designed to streamline the process of adding descriptive metadata (titles, descriptions, keywords) to various media files. It now supports multiple AI providers (Google Gemini, native OpenAI Responses, and OpenRouter routing to GPT-4.1/5, Claude, Grok, Llama 4, Gemini 2.5, and more) to analyze file content and suggest relevant metadata, which is then embedded directly into the files using the industry-standard ExifTool utility. This tool is particularly useful for photographers, videographers, graphic designers, and stock media contributors who need to manage and enrich large collections of digital assets efficiently.
+RJ Auto Metadata is a powerful desktop application built with Python and CustomTkinter, designed to streamline the process of adding descriptive metadata (titles, descriptions, keywords) to various media files. It now supports multiple AI providers (Google Gemini, OpenAI Responses, OpenRouter, and Groq) to analyze file content and suggest relevant metadata, which is then embedded directly into the files using the industry-standard ExifTool utility. This tool is particularly useful for photographers, videographers, graphic designers, and stock media contributors who need to manage and enrich large collections of digital assets efficiently.
 
 **Platform Support:**
 - 🟢 **Windows**: Full installer + source code support
@@ -21,11 +21,11 @@ RJ Auto Metadata is a powerful desktop application built with Python and CustomT
 ## 2. Core Features Detailed
 
 *   **AI-Powered Metadata Generation:**
-    *   Utilizes Google Gemini, OpenAI Responses, or OpenRouter (GPT, Claude, Grok, Llama 4, Gemini) for content analysis and metadata suggestion.
+    *   Utilizes Google Gemini, OpenAI Responses, OpenRouter, or Groq for content analysis and metadata suggestion.
     *   Extracts meaningful titles, detailed descriptions, and relevant keywords based on visual or content analysis.
-    *   Handles API communication, including request formatting and response parsing (`src/api/gemini_api.py`, `src/api/openai_api.py`, `src/api/openrouter_api.py`).
+    *   Handles API communication, including request formatting and response parsing (`src/api/gemini_api.py`, `src/api/openai_api.py`, `src/api/openrouter_api.py`, `src/api/groq_api.py`).
 *   **Multi-Provider Routing:**
-    *   Provider manager allows switching between Gemini, OpenAI, and OpenRouter from the UI.
+    *   Provider manager allows switching between Gemini, OpenAI, OpenRouter, and Groq from the UI.
     *   Per-provider model catalogs mirror the latest public offerings, including Gemini 2.5/2.0, GPT-5/4.1, Claude 4.5/3.7, Grok 4, and Llama 4 Maverick/Scout.
     *   API key storage, validation, and request scheduling respect the active provider (`src/api/provider_manager.py`).
 *   **Efficient Batch Processing:**
@@ -50,9 +50,9 @@ RJ Auto Metadata is a powerful desktop application built with Python and CustomT
     *   **Thread-Safe CSV Export:** High-concurrency processing support with atomic operations to prevent data corruption.
 *   **Extensive Customization & Configuration:**
     *   **Folder Selection:** Dedicated input and output folder paths. Ensures input/output are distinct.
-    *   **API Key Management:** Text area for multiple API keys per provider (Gemini/OpenAI/OpenRouter) with automatic persistence and last-five-character masking. Supports loading/saving keys to/from `.txt` files. Option to show/hide keys in the UI.
+    *   **API Key Management:** Text area for multiple API keys per provider (Gemini/OpenAI/OpenRouter/Groq) with automatic persistence and last-five-character masking. Supports loading/saving keys to/from `.txt` files. Option to show/hide keys in the UI.
     *   **API Key Paid Option:** New checkbox in the API Key section. If you have a paid Gemini API key, enable this option to allow the use of more workers than the number of API keys (removes the usual worker limit for free users). For free users, leave this unchecked to avoid hitting rate limits. **Note: Even with this option enabled, the maximum allowed workers is 100 for stability.**
-    *   **Provider & Model Selection:** Choose Gemini, OpenAI, or OpenRouter in the dropdown, then pick a specific model (e.g., `gemini-2.5-pro`, `openai/gpt-5`, `anthropic/claude-3.7-sonnet`). Gemini still supports automatic rotation (`Auto Rotation`).
+    *   **Provider & Model Selection:** Choose Gemini, OpenAI, OpenRouter, or Groq in the dropdown, then pick a specific model (e.g., `gemini-2.5-pro`, `openai/gpt-5`, `Llama 4 Scout`). Gemini still supports automatic rotation (`Auto Rotation`).
     *   **Prompt Quality:** Select the desired trade-off between result detail and speed (`Detailed`, `Balanced`, `Less`) via a dropdown, using different underlying prompts.
         *   _Note:_ Prompt length affects API token usage. Longer prompts (`Detailed`) consume more input tokens per request, potentially hitting token limits (TPM/TPD) faster. Shorter prompts (`Less`) are more token-efficient.
     *   **Keyword Count:** Specify the maximum number of keywords to request from the API (min 8, max 49).
@@ -192,8 +192,8 @@ Stores settings automatically (usually in `Documents/RJ Auto Metadata` on Window
 *   `input_dir`, `output_dir`: Folder paths.
 *   `delay`, `workers`: Performance settings.
 *   `rename`, `auto_kategori`, `auto_foldering`: File handling toggles (booleans).
-*   `api_keys`: Stored per provider (Gemini, OpenAI, OpenRouter) as entered via the UI.
-*   `provider`: Last used provider (e.g., "Gemini", "OpenAI", "OpenRouter").
+*   `api_keys`: Stored per provider (Gemini, OpenAI, OpenRouter, Groq) as entered via the UI.
+*   `provider`: Last used provider (e.g., "Gemini", "OpenAI", "OpenRouter", "Groq").
 *   `model`: Selected API model for the active provider (e.g., "gemini-2.5-pro", "openai/gpt-5").
 *   `priority`: Selected prompt priority ("Detailed", "Balanced", "Less").
 *   `keyword_count`: Maximum keywords requested (string, e.g., "49").
@@ -274,6 +274,17 @@ OpenAI applies per-minute and per-day quotas that depend on your account tier an
 ### 8.3. OpenRouter
 
 OpenRouter proxies multiple upstream providers. Your effective limits depend on both OpenRouter's own quotas and the limits imposed by the selected routed model (e.g., Anthropic, Google, xAI). Monitor usage through the [OpenRouter dashboard](https://openrouter.ai/dashboard) and consult the [OpenRouter rate limits article](https://openrouter.ai/docs/rate-limits). When possible, rotate multiple API keys or select models with more generous quotas to maintain throughput.
+
+### 8.4. Groq
+
+Groq offers high-speed inference with generous free-tier limits for supported models.
+
+- **Developer/Free Plan Limits (Typical):**
+  - **Llama 4 Vision Models (Scout/Maverick):** ~30 RPM, 1,000 RPD, ~6,000-30,000 TPM.
+  - **Text-Only Models:** Higher limits (e.g., 30 RPM, 14.4K RPD for Llama 3.1 8B).
+- **Rate Limit Handling:** The application handles `429 Too Many Requests` errors with automatic backoff.
+- **Vision Support:** Groq's Llama 4 preview models support direct image input for metadata generation.
+
 
 ## 9. Supported File Formats
 

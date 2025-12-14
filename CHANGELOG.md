@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 -
+## [3.11.0] - 2025-12-14
+
+### Added
+- **Groq Provider:** Native integration with Groq API (`src/api/groq_api.py`), enabling high-speed inference with specific support for Llama 4 Vision models (Scout & Maverick).
+- **Vision Capabilities:** Seamless image metadata generation using Groq's Llama 4 vision-capable models by default.
+- **Robust Rate Limiting:** Automatic backoff and retry logic specifically tuned for Groq's rate limits (TPM/RPM), ensuring stable batch processing.
+
 
 ## [3.10.0] - 2025-10-19
 
