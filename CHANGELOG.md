@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 -
 
+## [3.11.2] - 2026-01-17
+
+### Added
+- **KoboiLLM Provider:** Integrated support for the new KoboiLLM provider in the provider manager, allowing for additional model options.
+- **JSON Cleaning:** Added a new `_clean_json_text` function to enhance JSON parsing by removing unnecessary tags and extracting valid JSON content.
+
+### Changed
+- **Model Configuration:** Updated maximum output tokens for various models in OpenAI and OpenRouter APIs to 5120 for improved response handling.
+- **Error Logging:** Enhanced error logging in metadata extraction functions to include cleaned content for better debugging.
+
 ## [3.11.1] - 2025-12-24
 
 ### Changed
