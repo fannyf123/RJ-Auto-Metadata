@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-# src/api/openrouter_api.py
+# src/api/koboillm_api.py
 from __future__ import annotations
 
 import base64
@@ -42,43 +42,30 @@ def _clean_json_text(text: str) -> str:
     end_idx = text.rfind("}")
     if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
         return text[start_idx : end_idx + 1]
-
+    
     return text.strip()
 
-API_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
+API_ENDPOINT = "https://litellm.koboi2026.biz.id/chat/completions"
 API_TIMEOUT = 60
 API_MAX_RETRIES = 2
 RETRY_DELAY_SECONDS = 8
 MAX_OUTPUT_TOKENS: Optional[int] = None
 FORCE_STOP_FLAG = False
 
-OPENROUTER_HTTP_REFERER = os.getenv("OPENROUTER_HTTP_REFERER")
-OPENROUTER_TITLE = os.getenv("OPENROUTER_APP_TITLE")
-
-
-def _build_display_name(base: str, variant: str | None = None) -> str:
-	if not variant:
-		return base
-	return f"{base} ({variant})"
-
-
-OPENROUTER_MODEL_PRESETS: Dict[str, Dict[str, Optional[Union[str, int, float]]]] = {
-	"openai/gpt-5": {
-		"api_model": "openai/gpt-5",
-		"reasoning_effort": "medium",
-		"verbosity": "low",
-		"max_output_tokens": 5120,
-	},
+KOBOILLM_MODEL_PRESETS: Dict[str, Dict[str, Optional[Union[str, int, float]]]] = {
+	# "openai/gpt-5": {
+	# 	"api_model": "openai/gpt-5",
+	# 	"temperature": 0.2,
+	# 	"max_output_tokens": 5120,
+	# },
 	"openai/gpt-5-mini": {
 		"api_model": "openai/gpt-5-mini",
-		"reasoning_effort": "low",
-		"verbosity": "low",
+		"temperature": 0.2,
 		"max_output_tokens": 5120,
 	},
 	"openai/gpt-5-nano": {
 		"api_model": "openai/gpt-5-nano",
-		"reasoning_effort": "low",
-		"verbosity": "low",
+		"temperature": 0.2,
 		"max_output_tokens": 5120,
 	},
 	"openai/gpt-4.1": {
@@ -96,112 +83,42 @@ OPENROUTER_MODEL_PRESETS: Dict[str, Dict[str, Optional[Union[str, int, float]]]]
 		"temperature": 0.2,
 		"max_output_tokens": 5120,
 	},
-	"google/gemini-2.5-pro": {
-		"api_model": "google/gemini-2.5-pro",
+	"gemini/gemini-2.5-pro": {
+		"api_model": "gemini/gemini-2.5-pro",
 		"temperature": 0.2,
 		"max_output_tokens": 5120,
 	},
-	"google/gemini-2.5-flash": {
-		"api_model": "google/gemini-2.5-flash",
+	"gemini/gemini-2.5-flash": {
+		"api_model": "gemini/gemini-2.5-flash",
 		"temperature": 0.2,
 		"max_output_tokens": 5120,
 	},
-	"google/gemini-2.5-flash-lite": {
-		"api_model": "google/gemini-2.5-flash-lite",
+	"gemini/gemini-2.5-flash-lite": {
+		"api_model": "gemini/gemini-2.5-flash-lite",
 		"temperature": 0.3,
 		"max_output_tokens": 5120,
 	},
-	"google/gemini-2.0-flash-001": {
-		"api_model": "google/gemini-2.0-flash-001",
+	"gemini/gemini-2.0-flash": {
+		"api_model": "gemini/gemini-2.0-flash",
 		"temperature": 0.3,
 		"max_output_tokens": 5120,
 	},
-	"google/gemini-2.0-flash-lite-001": {
-		"api_model": "google/gemini-2.0-flash-lite-001",
+	"gemini/gemini-2.0-flash-lite": {
+		"api_model": "gemini/gemini-2.0-flash-lite",
 		"temperature": 0.3,
-		"max_output_tokens": 5120,
-	},
-	"anthropic/claude-sonnet-4": {
-		"api_model": "anthropic/claude-sonnet-4",
-		"temperature": 0.2,
-		"max_output_tokens": 5120,
-	},
-	"anthropic/claude-3.7-sonnet": {
-		"api_model": "anthropic/claude-3.7-sonnet",
-		"temperature": 0.2,
-		"max_output_tokens": 5120,
-	},
-	"anthropic/claude-3.5-sonnet": {
-		"api_model": "anthropic/claude-3.5-sonnet",
-		"temperature": 0.2,
-		"max_output_tokens": 5120,
-	},
-	"anthropic/claude-3.5-haiku": {
-		"api_model": "anthropic/claude-3.5-haiku",
-		"temperature": 0.2,
-		"max_output_tokens": 5120,
-	},
-	"x-ai/grok-4": {
-		"api_model": "x-ai/grok-4",
-		"temperature": 0.25,
-		"max_output_tokens": 5120,
-	},
-	"x-ai/grok-4-fast": {
-		"api_model": "x-ai/grok-4-fast",
-		"temperature": 0.25,
-		"max_output_tokens": 5120,
-	},
-	"meta-llama/llama-4-maverick": {
-		"api_model": "meta-llama/llama-4-maverick",
-		"temperature": 0.25,
-		"max_output_tokens": 5120,
-	},
-	"meta-llama/llama-4-scout": {
-		"api_model": "meta-llama/llama-4-scout",
-		"temperature": 0.25,
 		"max_output_tokens": 5120,
 	},
 }
 
-OPENROUTER_MODELS: List[str] = list(OPENROUTER_MODEL_PRESETS.keys())
-DEFAULT_MODEL = "openai/gpt-5"
+KOBOILLM_MODELS: List[str] = list(KOBOILLM_MODEL_PRESETS.keys())
+DEFAULT_MODEL = "gemini/gemini-2.5-flash"
 
 _ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 _STRUCTURED_OUTPUT_MODEL_PREFIXES: Tuple[str, ...] = (
-	"openai/gpt-5",
 	"openai/gpt-4.1",
-	"google/gemini-2.5",
-	"google/gemini-2.0",
-	"anthropic/claude",
-	"x-ai/grok-4",
-	"meta-llama/llama-4",
+	"gemini/gemini-2.5",
+	"gemini/gemini-2.0",
 )
-
-_JSON_SCHEMA = {
-	"name": "metadata_response",
-	"schema": {
-		"type": "object",
-		"properties": {
-			"title": {"type": "string", "maxLength": 200},
-			"description": {"type": "string", "maxLength": 200},
-			"keywords": {
-				"type": "array",
-				"items": {"type": "string"},
-				"maxItems": 60,
-			},
-			"adobe_stock_category": {"type": "string"},
-			"shutterstock_category": {"type": "string"},
-		},
-		"required": [
-			"title",
-			"description",
-			"keywords",
-			"adobe_stock_category",
-			"shutterstock_category",
-		],
-		"additionalProperties": False,
-	},
-}
 
 _API_KEY_LOCK = threading.Lock()
 _API_KEY_INDEX = 0
@@ -232,16 +149,6 @@ def _model_supports_structured_outputs(model: str) -> bool:
 	)
 
 
-def _normalize_keyword_count(keyword_count: Union[str, int]) -> int:
-	try:
-		value = int(keyword_count)
-		if value <= 0:
-			return 10
-		return min(value, 60)
-	except Exception:
-		return 49
-
-
 def select_api_key(api_keys: Iterable[str]) -> Optional[str]:
 	keys = list(api_keys) if not isinstance(api_keys, list) else api_keys
 	if not keys:
@@ -260,7 +167,7 @@ def is_stop_requested() -> bool:
 def set_force_stop() -> None:
 	global FORCE_STOP_FLAG
 	FORCE_STOP_FLAG = True
-	log_message("Force stop flag activated for OpenRouter provider.", "warning")
+	log_message("Force stop flag activated for KoboiLLM provider.", "warning")
 
 
 def reset_force_stop() -> None:
@@ -361,8 +268,7 @@ def _build_payload(
 	else:
 		payload["temperature"] = 0.2
 
-	if _is_gpt5_model(model):
-		payload["reasoning"] = {"effort": reasoning_effort or "medium"}
+
 
 	if _model_supports_structured_outputs(model):
 		payload["response_format"] = {
@@ -372,7 +278,7 @@ def _build_payload(
 		if model not in _WARNED_MODELS_FOR_SCHEMA:
 			log_message(
 				(
-					"OpenRouter model %s does not advertise structured outputs; "
+					"KoboiLLM model %s does not advertise structured outputs; "
 					"relying on instructions to keep JSON clean."
 				)
 				% model,
@@ -396,10 +302,6 @@ def _extract_metadata_from_json(raw_json: dict, keyword_count: Union[str, int]) 
 	else:
 		tags = []
 	tags = list(dict.fromkeys(tags))[:keyword_limit]
-	# try:
-	# 	log_message(f"[OpenRouter] Raw keywords: {len(raw_keywords)}, after dedup/limit: {len(tags)} (limit {keyword_limit})", "debug")
-	# except Exception:
-	# 	pass
 	return {
 		"title": raw_json.get("title", ""),
 		"description": raw_json.get("description", ""),
@@ -409,7 +311,7 @@ def _extract_metadata_from_json(raw_json: dict, keyword_count: Union[str, int]) 
 	}
 
 
-def _parse_openrouter_response(response_data: dict, keyword_count: Union[str, int]) -> Optional[dict]:
+def _parse_koboillm_response(response_data: dict, keyword_count: Union[str, int]) -> Optional[dict]:
 	choices = response_data.get("choices") or []
 	observed_types: set[str] = set()
 
@@ -423,7 +325,7 @@ def _parse_openrouter_response(response_data: dict, keyword_count: Union[str, in
 				if isinstance(raw_json, dict):
 					return _extract_metadata_from_json(raw_json, keyword_count)
 			except (json.JSONDecodeError, TypeError) as e:
-				log_message(f"Failed to parse JSON from OpenRouter content: {e}. Content: {content[:100]}...", "debug")
+				log_message(f"Failed to parse JSON from KoboiLLM content: {e}. Content: {content[:100]}...", "debug")
 				continue
 		elif isinstance(content, list):
 			for item in content:
@@ -474,7 +376,7 @@ def _parse_openrouter_response(response_data: dict, keyword_count: Union[str, in
 
 	if choices and observed_types:
 		log_message(
-			"OpenRouter response content types not parsed: %s"
+			"KoboiLLM response content types not parsed: %s"
 			% ", ".join(sorted(observed_types)),
 			"warning",
 		)
@@ -485,13 +387,13 @@ def _validate_images(images: Iterable[str]) -> Tuple[bool, Optional[str]]:
 	for image in images:
 		_, ext = os.path.splitext(image)
 		if ext.lower() not in _ALLOWED_EXTENSIONS:
-			return False, f"File type {ext} not supported for OpenRouter: {os.path.basename(image)}"
+			return False, f"File type {ext} not supported for KoboiLLM: {os.path.basename(image)}"
 		if not os.path.exists(image):
-			return False, f"Image not found for OpenRouter request: {image}"
+			return False, f"Image not found for KoboiLLM request: {image}"
 	return True, None
 
 
-def get_openrouter_metadata(
+def get_koboillm_metadata(
 	image_path: Union[str, List[str]],
 	api_key: str,
 	stop_event,
@@ -505,21 +407,21 @@ def get_openrouter_metadata(
 	images: List[str] = image_path if isinstance(image_path, list) else [image_path]
 	is_valid, error_message = _validate_images(images)
 	if not is_valid:
-		log_message(error_message or "Invalid image for OpenRouter request", "warning")
+		log_message(error_message or "Invalid image for KoboiLLM request", "warning")
 		return {"error": error_message or "unsupported_image_format"}
 
-	if check_stop_event(stop_event, "OpenRouter request cancelled before submission"):
+	if check_stop_event(stop_event, "KoboiLLM request cancelled before submission"):
 		return "stopped"
 
 	model_to_use = (selected_model_input or DEFAULT_MODEL).strip()
-	if model_to_use not in OPENROUTER_MODELS:
+	if model_to_use not in KOBOILLM_MODELS:
 		log_message(
-			f"Unknown OpenRouter model '{model_to_use}', falling back to {DEFAULT_MODEL}",
+			f"Unknown KoboiLLM model '{model_to_use}', falling back to {DEFAULT_MODEL}",
 			"warning",
 		)
 		model_to_use = DEFAULT_MODEL
 
-	model_settings = OPENROUTER_MODEL_PRESETS.get(model_to_use, {"api_model": model_to_use})
+	model_settings = KOBOILLM_MODEL_PRESETS.get(model_to_use, {"api_model": model_to_use})
 	api_model = model_settings.get("api_model", model_to_use)
 	reasoning_effort = model_settings.get("reasoning_effort")
 	verbosity = model_settings.get("verbosity")
@@ -532,12 +434,12 @@ def get_openrouter_metadata(
 		priority,
 		use_png_prompt=use_png_prompt,
 		use_video_prompt=use_video_prompt,
-		provider="openrouter",
+		provider="openrouter", # Reusing generic or openrouter prompt as it's likely similar
 	)
 
 	attempt = 0
 	while attempt < API_MAX_RETRIES:
-		if check_stop_event(stop_event, "OpenRouter request cancelled during retries"):
+		if check_stop_event(stop_event, "KoboiLLM request cancelled during retries"):
 			return "stopped"
 
 		payload = _build_payload(
@@ -556,14 +458,10 @@ def get_openrouter_metadata(
 			"Content-Type": "application/json",
 			"Accept": "application/json",
 		}
-		if OPENROUTER_HTTP_REFERER:
-			headers["HTTP-Referer"] = OPENROUTER_HTTP_REFERER
-		if OPENROUTER_TITLE:
-			headers["X-Title"] = OPENROUTER_TITLE
 
 		try:
 			log_message(
-				f"Sending metadata request to OpenRouter model {model_to_use} (key ...{api_key[-5:]})",
+				f"Sending metadata request to KoboiLLM model {model_to_use} (key ...{api_key[-5:]})",
 				"info",
 			)
 			response = requests.post(
@@ -575,14 +473,14 @@ def get_openrouter_metadata(
 		except requests.RequestException as exc:
 			if check_stop_event(stop_event):
 				return "stopped"
-			log_message(f"OpenRouter request failed: {exc}", "error")
+			log_message(f"KoboiLLM request failed: {exc}", "error")
 			attempt += 1
 			if attempt >= API_MAX_RETRIES:
 				return {"error": str(exc)}
 			sleep_duration = RETRY_DELAY_SECONDS * attempt
 			sleep_start = time.time()
 			while time.time() - sleep_start < sleep_duration:
-				if check_stop_event(stop_event, "OpenRouter retry sleep cancelled"):
+				if check_stop_event(stop_event, "KoboiLLM retry sleep cancelled"):
 					return "stopped"
 				time.sleep(0.1)
 			continue
@@ -591,37 +489,30 @@ def get_openrouter_metadata(
 			try:
 				response_data = response.json()
 			except json.JSONDecodeError as exc:
-				log_message(f"Failed to decode OpenRouter response JSON: {exc}", "error")
+				log_message(f"Failed to decode KoboiLLM response JSON: {exc}", "error")
 				return {"error": "invalid_json"}
 
-			usage_payload = response_data.get("usage") or {}
-			output_tokens = (
-				usage_payload.get("completion_tokens")
-				or usage_payload.get("output_tokens")
-			)
-
-
-			metadata = _parse_openrouter_response(response_data, keyword_count)
+			metadata = _parse_koboillm_response(response_data, keyword_count)
 			if metadata:
-				log_message("Metadata successfully extracted from OpenRouter response", "success")
+				log_message("Metadata successfully extracted from KoboiLLM response", "success")
 				return metadata
 
-			log_message("OpenRouter response did not include usable metadata", "warning")
+			log_message("KoboiLLM response did not include usable metadata", "warning")
 			return {"error": "empty_response"}
 
 		if response.status_code in {401, 403}:
-			log_message("OpenRouter authentication error - check API key permissions", "error")
+			log_message("KoboiLLM authentication error - check API key permissions", "error")
 			return {"error": f"Authentication failed ({response.status_code})"}
 
 		if response.status_code == 429:
 			if check_stop_event(stop_event):
 				return "stopped"
-			log_message("OpenRouter rate limit hit, backing off before retry", "warning")
+			log_message("KoboiLLM rate limit hit, backing off before retry", "warning")
 			attempt += 1
 			sleep_duration = RETRY_DELAY_SECONDS * attempt
 			sleep_start = time.time()
 			while time.time() - sleep_start < sleep_duration:
-				if check_stop_event(stop_event, "OpenRouter retry sleep cancelled"):
+				if check_stop_event(stop_event, "KoboiLLM retry sleep cancelled"):
 					return "stopped"
 				time.sleep(0.1)
 			continue
@@ -629,12 +520,12 @@ def get_openrouter_metadata(
 		if 500 <= response.status_code < 600:
 			if check_stop_event(stop_event):
 				return "stopped"
-			log_message(f"OpenRouter server error {response.status_code}, retrying", "warning")
+			log_message(f"KoboiLLM server error {response.status_code}, retrying", "warning")
 			attempt += 1
 			sleep_duration = RETRY_DELAY_SECONDS * attempt
 			sleep_start = time.time()
 			while time.time() - sleep_start < sleep_duration:
-				if check_stop_event(stop_event, "OpenRouter retry sleep cancelled"):
+				if check_stop_event(stop_event, "KoboiLLM retry sleep cancelled"):
 					return "stopped"
 				time.sleep(0.1)
 			continue
@@ -660,18 +551,18 @@ def get_openrouter_metadata(
 					error_message = fallback_text[:200]
 
 		log_message(
-			f"OpenRouter request failed (HTTP {response.status_code}): {error_message}",
+			f"KoboiLLM request failed (HTTP {response.status_code}): {error_message}",
 			"error",
 		)
 		return {"error": error_message or f"http_{response.status_code}"}
 
-	return {"error": "openrouter_max_retries"}
+	return {"error": "koboillm_max_retries"}
 
 
 def check_api_keys_status(api_keys: Iterable[str], model: Optional[str] = None) -> dict:
 	results: Dict[str, Tuple[int, str]] = {}
 	test_model = (model or DEFAULT_MODEL).strip()
-	model_settings = OPENROUTER_MODEL_PRESETS.get(test_model, {"api_model": test_model})
+	model_settings = KOBOILLM_MODEL_PRESETS.get(test_model, {"api_model": test_model})
 	api_model = model_settings.get("api_model", test_model)
 
 	payload = {
@@ -713,10 +604,6 @@ def check_api_keys_status(api_keys: Iterable[str], model: Optional[str] = None) 
 			"Content-Type": "application/json",
 			"Accept": "application/json",
 		}
-		if OPENROUTER_HTTP_REFERER:
-			headers["HTTP-Referer"] = OPENROUTER_HTTP_REFERER
-		if OPENROUTER_TITLE:
-			headers["X-Title"] = OPENROUTER_TITLE
 
 		try:
 			response = requests.post(

@@ -89,7 +89,7 @@ def compress_image(input_path, temp_folder=None, max_size_mb=MAX_IMAGE_SIZE_MB, 
                 needs_resize = original_width > max_dimension or original_height > max_dimension
                 needs_compress = file_size_mb > max_size_mb
                 if not needs_resize and not needs_compress:
-                    log_message(f"No compression needed (size {file_size_mb:.2f}MB, {original_width}x{original_height}): {filename}")
+                    # log_message(f"No compression needed: {filename}")
                     return input_path, False
 
                 if (stop_event and stop_event.is_set()) or is_stop_requested():

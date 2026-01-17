@@ -24,11 +24,26 @@ import threading
 import time
 from typing import Dict, Iterable, List, Optional, Tuple, Union
 import re
-
 import requests
 
 from src.api.prompts import select_prompt
 from src.utils.logging import log_message
+
+def _clean_json_text(text: str) -> str:
+    if not text:
+        return ""
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    pattern = r"```(?:json)?\s*(.*?)\s*```"
+    match = re.search(pattern, text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    start_idx = text.find("{")
+    end_idx = text.rfind("}")
+    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+        return text[start_idx : end_idx + 1]
+
+    return text.strip()
+
 API_ENDPOINT = "https://api.openai.com/v1/responses"
 API_TIMEOUT = 60
 API_MAX_RETRIES = 2
@@ -41,37 +56,37 @@ OPENAI_MODEL_PRESETS: Dict[str, Dict[str, Optional[Union[str, int, float]]]] = {
         "api_model": "gpt-5",
         "reasoning_effort": "medium",
         "verbosity": "medium",
-        "max_output_tokens": 3072,
+        "max_output_tokens": 5120,
     },
     "gpt-5-mini": {
         "api_model": "gpt-5-mini",
         "reasoning_effort": "medium",
         "verbosity": "medium",
-        "max_output_tokens": 2048,
+        "max_output_tokens": 5120,
     },
     "gpt-5-nano": {
         "api_model": "gpt-5-nano",
         "reasoning_effort": "medium",
         "verbosity": "medium",
-        "max_output_tokens": 4096,
+        "max_output_tokens": 5120,
     },
     "gpt-5 (low)": {
         "api_model": "gpt-5",
         "reasoning_effort": "low",
         "verbosity": "low",
-        "max_output_tokens": 2048,
+        "max_output_tokens": 5120,
     },
     "gpt-5-mini (low)": {
         "api_model": "gpt-5-mini",
         "reasoning_effort": "low",
         "verbosity": "low",
-        "max_output_tokens": 2048,
+        "max_output_tokens": 5120,
     },
     "gpt-5-nano (low)": {
         "api_model": "gpt-5-nano",
         "reasoning_effort": "low",
         "verbosity": "low",
-        "max_output_tokens": 2048,
+        "max_output_tokens": 5120,
     },
     "gpt-4.1": {
         "api_model": "gpt-4.1",
@@ -389,10 +404,12 @@ def _parse_openai_response(response_data: dict, keyword_count: Union[str, int]):
                 if isinstance(text_value, str):
                     text_candidates.append(text_value)
                     try:
-                        raw_json = json.loads(text_value)
+                        cleaned_text = _clean_json_text(text_value)
+                        raw_json = json.loads(cleaned_text)
                         if isinstance(raw_json, dict):
                             return _extract_metadata_from_json(raw_json, keyword_count)
-                    except (json.JSONDecodeError, TypeError):
+                    except (json.JSONDecodeError, TypeError) as e:
+                        log_message(f"Failed to parse JSON from OpenAI text: {e}. Content: {cleaned_text[:100]}...", "debug")
                         fallback = _extract_metadata_from_text_fallback(text_value, keyword_count)
                         if fallback:
                             return fallback
@@ -411,7 +428,8 @@ def _parse_openai_response(response_data: dict, keyword_count: Union[str, int]):
                     if isinstance(candidate, str):
                         text_candidates.append(candidate)
                         try:
-                            raw_json = json.loads(candidate)
+                            cleaned_candidate = _clean_json_text(candidate)
+                            raw_json = json.loads(cleaned_candidate)
                             if isinstance(raw_json, dict):
                                 return _extract_metadata_from_json(raw_json, keyword_count)
                         except (json.JSONDecodeError, TypeError):
@@ -430,7 +448,8 @@ def _parse_openai_response(response_data: dict, keyword_count: Union[str, int]):
     # Final fallback: try any collected text candidates (last first)
     for text_value in reversed(text_candidates):
         try:
-            raw_json = json.loads(text_value)
+            cleaned_text = _clean_json_text(text_value)
+            raw_json = json.loads(cleaned_text)
             if isinstance(raw_json, dict):
                 return _extract_metadata_from_json(raw_json, keyword_count)
         except Exception:
@@ -551,15 +570,7 @@ def get_openai_metadata(
                 return {"error": "invalid_json"}
             usage_payload = response_data.get("usage") or {}
             output_tokens = usage_payload.get("output_tokens")
-            if isinstance(output_tokens, int) and output_tokens > 600:
-                log_message(
-                    (
-                        "OpenAI model %s returned %s output tokens despite schema constraints;"
-                        " response may include additional text."
-                    )
-                    % (model_to_use, output_tokens),
-                    "warning",
-                )
+
             metadata = _parse_openai_response(response_data, keyword_count)
             if metadata:
                 log_message("Metadata successfully extracted from OpenAI response", "success")

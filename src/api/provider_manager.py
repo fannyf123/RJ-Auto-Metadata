@@ -20,13 +20,14 @@ from __future__ import annotations
 from typing import Iterable, List, Optional
 import re
 
-from src.api import gemini_api, openai_api, openrouter_api, groq_api
+from src.api import gemini_api, openai_api, openrouter_api, groq_api, koboillm_api
 from src.utils.logging import log_message
 
 PROVIDER_GEMINI = "Gemini"
 PROVIDER_OPENAI = "OpenAI"
 PROVIDER_OPENROUTER = "OpenRouter"
 PROVIDER_GROQ = "Groq"
+PROVIDER_KOBOILLM = "KoboiLLM"
 _DEFAULT_PROVIDER = PROVIDER_GEMINI
 
 _PROVIDERS = {
@@ -53,6 +54,12 @@ _PROVIDERS = {
         "models": list(groq_api.GROQ_MODELS),
         "supports_auto_rotation": False,
         "default_model": groq_api.DEFAULT_MODEL,
+    },
+    PROVIDER_KOBOILLM: {
+        "module": koboillm_api,
+        "models": list(koboillm_api.KOBOILLM_MODELS),
+        "supports_auto_rotation": False,
+        "default_model": koboillm_api.DEFAULT_MODEL,
     },
 }
 
@@ -204,6 +211,21 @@ def get_metadata(
         return result
     if provider_key == PROVIDER_GROQ:
         result = module.get_groq_metadata(
+            image_path,
+            api_key,
+            stop_event,
+            use_png_prompt=use_png_prompt,
+            use_video_prompt=use_video_prompt,
+            selected_model_input=effective_model,
+            keyword_count=keyword_count,
+            priority=priority,
+            is_vector_conversion=is_vector_conversion,
+        )
+        if isinstance(result, dict) and "error" not in result:
+            return _fill_keywords_if_short(result, keyword_count)
+        return result
+    if provider_key == PROVIDER_KOBOILLM:
+        result = module.get_koboillm_metadata(
             image_path,
             api_key,
             stop_event,
