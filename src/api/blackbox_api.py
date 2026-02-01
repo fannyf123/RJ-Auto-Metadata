@@ -36,13 +36,39 @@ RETRY_DELAY_SECONDS = 8
 
 FORCE_STOP_FLAG = False
 
+# NOTE:
+# User requested to try all Gemini models one-by-one.
+# To avoid blocking experiments, we keep a long Gemini list for the UI and also
+# allow any model id that starts with blackboxai/google/gemini- or blackboxai/gemini-.
 BLACKBOX_MODELS: List[str] = [
-    # Curated vision-capable models (keep list short to avoid UI overload)
+    # Gemini 3
     "blackboxai/google/gemini-3-pro-preview",
+    "blackboxai/google/gemini-3-pro-image-preview",
+    "blackboxai/google/gemini-3-flash-preview",
+    "blackboxai/gemini-3-pro-image-previewedit",
+
+    # Gemini 2.5
     "blackboxai/google/gemini-2.5-pro",
+    "blackboxai/google/gemini-2.5-pro-preview",
+    "blackboxai/google/gemini-2.5-pro-preview-05-06",
     "blackboxai/google/gemini-2.5-flash",
+    "blackboxai/google/gemini-2.5-flash-image",
+    "blackboxai/google/gemini-2.5-flash-lite",
+    "blackboxai/google/gemini-2.5-flash-preview-09-2025",
+    "blackboxai/google/gemini-2.5-flash-lite-preview-09-2025",
+    "blackboxai/gemini-25-flash-imageedit",
+
+    # Gemini 2.0
+    "blackboxai/google/gemini-2.0-flash-001",
+    "blackboxai/google/gemini-2.0-flash-lite-001",
+
+    # Gemini edit variants (may require image/edit endpoints; kept for experimentation)
+    "blackboxai/gemini-flash-edit",
+    "blackboxai/gemini-flash-editmulti",
 ]
-DEFAULT_MODEL = "blackboxai/google/gemini-3-pro-preview"
+
+# Keep default on the most reliable model reported by users
+DEFAULT_MODEL = "blackboxai/google/gemini-2.5-flash"
 
 _ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 _API_KEY_LOCK = threading.Lock()
@@ -290,7 +316,11 @@ def get_blackbox_metadata(
         return "stopped"
 
     model_to_use = (selected_model_input or DEFAULT_MODEL).strip()
-    if model_to_use not in BLACKBOX_MODELS:
+
+    # Allow any Gemini model id (so user can test models one-by-one even if not in the list)
+    if model_to_use.startswith("blackboxai/google/gemini-") or model_to_use.startswith("blackboxai/gemini-"):
+        pass
+    elif model_to_use not in BLACKBOX_MODELS:
         log_message(
             f"Unknown Blackbox model '{model_to_use}', falling back to {DEFAULT_MODEL}",
             "warning",
