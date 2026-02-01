@@ -38,10 +38,11 @@ FORCE_STOP_FLAG = False
 
 BLACKBOX_MODELS: List[str] = [
     # Curated vision-capable models (keep list short to avoid UI overload)
+    "blackboxai/google/gemini-3-pro-preview",
     "blackboxai/google/gemini-2.5-pro",
     "blackboxai/google/gemini-2.5-flash",
 ]
-DEFAULT_MODEL = "blackboxai/google/gemini-2.5-pro"
+DEFAULT_MODEL = "blackboxai/google/gemini-3-pro-preview"
 
 _ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 _API_KEY_LOCK = threading.Lock()
@@ -194,33 +195,75 @@ def _extract_metadata_from_json(raw_json: dict) -> dict:
     }
 
 
+def _content_to_text(content: object) -> str:
+    if isinstance(content, str):
+        return content
+
+    # OpenAI-compatible multi-part content: [{"type":"text","text":"..."}, ...]
+    if isinstance(content, list):
+        parts: List[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+            if isinstance(item, dict):
+                text_value = item.get("text")
+                if isinstance(text_value, str) and text_value.strip():
+                    parts.append(text_value)
+        return "\n".join(parts)
+
+    if isinstance(content, dict):
+        text_value = content.get("text")
+        if isinstance(text_value, str):
+            return text_value
+
+    return ""
+
+
+def _try_extract_json_text(text: str) -> Optional[dict]:
+    text = (text or "").strip()
+    if not text:
+        return None
+
+    try:
+        raw_json = json.loads(text)
+        if isinstance(raw_json, dict):
+            return raw_json
+    except Exception:
+        pass
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        try:
+            raw_json = json.loads(text[start : end + 1])
+            if isinstance(raw_json, dict):
+                return raw_json
+        except Exception:
+            return None
+
+    return None
+
+
 def _parse_blackbox_response(response_data: dict) -> Optional[dict]:
     choices = response_data.get("choices") or []
     for choice in choices:
+        # Some responses may include an error per-choice
+        error_block = choice.get("error")
+        if isinstance(error_block, dict):
+            message = error_block.get("message") or error_block.get("code")
+            if message:
+                return {"error": str(message)}
+
         message = choice.get("message") or {}
         content = message.get("content")
-        if not isinstance(content, str):
-            continue
-        content = content.strip()
-        if not content:
+        content_text = _content_to_text(content).strip()
+        if not content_text:
             continue
 
-        try:
-            raw_json = json.loads(content)
-            if isinstance(raw_json, dict):
-                return _extract_metadata_from_json(raw_json)
-        except Exception:
-            pass
-
-        start = content.find("{")
-        end = content.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            try:
-                raw_json = json.loads(content[start : end + 1])
-                if isinstance(raw_json, dict):
-                    return _extract_metadata_from_json(raw_json)
-            except Exception:
-                continue
+        raw_json = _try_extract_json_text(content_text)
+        if isinstance(raw_json, dict):
+            return _extract_metadata_from_json(raw_json)
 
     return None
 
@@ -302,13 +345,27 @@ def get_blackbox_metadata(
                 log_message(f"Failed to decode Blackbox response JSON: {exc}", "error")
                 return {"error": "invalid_json"}
 
-            metadata = _parse_blackbox_response(response_data)
+            # Top-level error block
+            if isinstance(response_data, dict) and isinstance(response_data.get("error"), dict):
+                error_block = response_data.get("error") or {}
+                err_msg = error_block.get("message") or error_block.get("code") or "unknown_error"
+                log_message(f"Blackbox error: {err_msg}", "error")
+                return {"error": str(err_msg)}
+
+            metadata = _parse_blackbox_response(response_data if isinstance(response_data, dict) else {})
+            if isinstance(metadata, dict) and metadata.get("error"):
+                return metadata
             if metadata:
                 log_message("Metadata successfully extracted from Blackbox response", "success")
                 return metadata
 
+            # Debug snippet (no API key)
+            try:
+                snippet = json.dumps(response_data)[:500]
+            except Exception:
+                snippet = (response.text or "")[:500]
             log_message(
-                "Blackbox response did not include usable metadata. If this persists, try another model.",
+                f"Blackbox response did not include usable metadata. Snippet: {snippet}",
                 "warning",
             )
             return {"error": "empty_response"}
