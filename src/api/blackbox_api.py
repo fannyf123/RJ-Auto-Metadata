@@ -20,8 +20,10 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import threading
 import time
+import unicodedata
 from typing import Dict, Iterable, List, Optional, Tuple, Union
 
 import requests
@@ -36,13 +38,39 @@ RETRY_DELAY_SECONDS = 8
 
 FORCE_STOP_FLAG = False
 
+# NOTE:
+# User requested to try all Gemini models one-by-one.
+# To avoid blocking experiments, we keep a long Gemini list for the UI and also
+# allow any model id that starts with blackboxai/google/gemini- or blackboxai/gemini-.
 BLACKBOX_MODELS: List[str] = [
-    # Curated vision-capable models (keep list short to avoid UI overload)
+    # Gemini 3
     "blackboxai/google/gemini-3-pro-preview",
+    "blackboxai/google/gemini-3-pro-image-preview",
+    "blackboxai/google/gemini-3-flash-preview",
+    "blackboxai/gemini-3-pro-image-previewedit",
+
+    # Gemini 2.5
     "blackboxai/google/gemini-2.5-pro",
+    "blackboxai/google/gemini-2.5-pro-preview",
+    "blackboxai/google/gemini-2.5-pro-preview-05-06",
     "blackboxai/google/gemini-2.5-flash",
+    "blackboxai/google/gemini-2.5-flash-image",
+    "blackboxai/google/gemini-2.5-flash-lite",
+    "blackboxai/google/gemini-2.5-flash-preview-09-2025",
+    "blackboxai/google/gemini-2.5-flash-lite-preview-09-2025",
+    "blackboxai/gemini-25-flash-imageedit",
+
+    # Gemini 2.0
+    "blackboxai/google/gemini-2.0-flash-001",
+    "blackboxai/google/gemini-2.0-flash-lite-001",
+
+    # Gemini edit variants (may require image/edit endpoints; kept for experimentation)
+    "blackboxai/gemini-flash-edit",
+    "blackboxai/gemini-flash-editmulti",
 ]
-DEFAULT_MODEL = "blackboxai/google/gemini-3-pro-preview"
+
+# Keep default on the most reliable model reported by users
+DEFAULT_MODEL = "blackboxai/google/gemini-2.5-flash"
 
 _ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 _API_KEY_LOCK = threading.Lock()
@@ -172,18 +200,51 @@ def _build_payload(
     }
 
 
+def _sanitize_tag(tag: str) -> str:
+    # Keep tags UI-safe and mostly platform-safe (ASCII, 1-token).
+    # This prevents issues like "décor" becoming invalid/garbled in downstream keyword fields.
+    tag = str(tag or "")
+    tag = tag.strip()
+    if not tag:
+        return ""
+
+    # Convert accents -> ASCII (décor -> decor)
+    tag = unicodedata.normalize("NFKD", tag)
+    tag = tag.encode("ascii", "ignore").decode("ascii")
+
+    tag = tag.lower().strip()
+
+    # Normalize common separators to spaces first
+    tag = re.sub(r"[\t\r\n]+", " ", tag)
+    tag = re.sub(r"[,_/;|]+", " ", tag)
+    tag = re.sub(r"\s+", " ", tag).strip()
+
+    # Make it a single token (spaces -> hyphen)
+    tag = tag.replace(" ", "-")
+
+    # Allow only letters, digits, and hyphens
+    tag = re.sub(r"[^a-z0-9-]+", "", tag)
+    tag = re.sub(r"-{2,}", "-", tag).strip("-")
+
+    return tag
+
+
 def _extract_metadata_from_json(raw_json: dict) -> dict:
     keywords = raw_json.get("keywords") or []
     raw_keywords: List[str] = []
+
     if isinstance(keywords, list):
         raw_keywords = [str(item).strip() for item in keywords if str(item).strip()]
-        tags = list(raw_keywords)
     elif isinstance(keywords, str):
         raw_keywords = [part.strip() for part in keywords.split(",") if part.strip()]
-        tags = list(raw_keywords)
-    else:
-        tags = []
 
+    tags: List[str] = []
+    for kw in raw_keywords:
+        cleaned = _sanitize_tag(kw)
+        if cleaned:
+            tags.append(cleaned)
+
+    # De-duplicate while preserving order, and cap for safety
     tags = list(dict.fromkeys(tags))[:60]
 
     return {
@@ -290,7 +351,11 @@ def get_blackbox_metadata(
         return "stopped"
 
     model_to_use = (selected_model_input or DEFAULT_MODEL).strip()
-    if model_to_use not in BLACKBOX_MODELS:
+
+    # Allow any Gemini model id (so user can test models one-by-one even if not in the list)
+    if model_to_use.startswith("blackboxai/google/gemini-") or model_to_use.startswith("blackboxai/gemini-"):
+        pass
+    elif model_to_use not in BLACKBOX_MODELS:
         log_message(
             f"Unknown Blackbox model '{model_to_use}', falling back to {DEFAULT_MODEL}",
             "warning",
